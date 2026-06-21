@@ -16,7 +16,13 @@ class Submission extends Model
         'language',
         'code',
         'verdict',
+        'status',
         'outputs',
+        'output',
+        'time',
+        'memory',
+        'error_message',
+        'judged_at',
         'created_at',
         'updated_at',
     ];

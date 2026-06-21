@@ -1,6 +1,17 @@
 version: "3.8"
 
 services:
+    # Redis Cache & Queue
+    redis:
+        image: redis:7-alpine
+        container_name: laravel-redis
+        ports:
+            - "6379:6379"
+        networks:
+            - app-network
+        volumes:
+            - redis_data:/data
+
     # Laravel App (Web)
     laravel:
         build:
@@ -16,11 +27,12 @@ services:
             - app-network
         depends_on:
             - db
+            - redis
         env_file:
             - .env
         command: sh -c "mkdir -p /tmp/run/php && chown -R www-data:www-data /tmp/run /tmp/nginx-logs && php-fpm --fpm-config /usr/local/etc/php-fpm.conf --daemonize && nginx -g 'daemon off;'"
 
-    # Laravel Queue Worker
+    # Laravel Queue Worker (for submission grading jobs to judge-box)
     queue-worker:
         build:
             context: ./
@@ -34,9 +46,27 @@ services:
             - app-network
         depends_on:
             - db
+            - redis
         env_file:
             - .env
-        command: php /var/www/html/artisan queue:work --sleep=3 --tries=3
+        command: php /var/www/html/artisan queue:work redis --sleep=3 --tries=3
+
+    # Judge Result Consumer (listens to judge:results queue from judge-box)
+    judge-consumer:
+        build:
+            context: ./
+            dockerfile: Dockerfile
+        container_name: judge-result-consumer
+        volumes:
+            - ./:/var/www/html
+        networks:
+            - app-network
+        depends_on:
+            - db
+            - redis
+        env_file:
+            - .env
+        command: php /var/www/html/artisan judge:worker
 
     # PostgreSQL Database
     db:
@@ -55,37 +85,10 @@ services:
         env_file:
             - .env
 
-    # React Frontend
-    react:
-        build:
-            context: ./react
-            dockerfile: Dockerfile
-        container_name: react-app
-        ports:
-            - "3000:80"
-        networks:
-            - app-network
-        depends_on:
-            - laravel
-
-    # Reverse Proxy (Optional but Recommended)
-    proxy:
-        image: nginx:alpine
-        ports:
-            - "80:80"
-        volumes:
-            - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf
-        depends_on:
-            react:
-                condition: service_started
-            laravel:
-                condition: service_started
-        networks:
-            - app-network
-
 networks:
     app-network:
         driver: bridge
 
 volumes:
     pgdata:
+    redis_data:

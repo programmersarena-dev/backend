@@ -10,6 +10,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Jobs\TestCodeJob;
+use App\Jobs\GradeSubmissionJob;
 use App\Http\Resources\SubmissionResource;
 
 class SubmissionController extends Controller
@@ -89,34 +90,29 @@ class SubmissionController extends Controller
         $code = $request->input('code');
         $languageWithVersion = $request->input('language');
         list($language, $version) = explode("-", $languageWithVersion);
+        $languageKey = $language;
         $language = config('languages.dockerLanguages')[$language];
+
         $codeContent = $code ? $code : file_get_contents($file->getRealPath());
 
-        if (env('SSH_DOCKER_IP') == 'localhost' || env('SSH_DOCKER_IP') == '127.0.0.1') {
-            $host = new \App\Services\LocalHostService();
-        } else {
-            $host = new \App\Services\RemoteHostService();
-        }
-
-        if ($file)
-            $host->saveFile($file, "submission." . $language['extension']);
-        if ($code)
-            $host->saveText($code, "submission." . $language['extension']);
-
-        $host->moveFile(
-            storage_path('app/public/' . $problem->test_cases . '/check'),
-            "check"
-        );
-
+        // Create submission with Queued status
         $submission = Submission::create([
             'user_id' => Auth::user()->id,
             'problem_id' => $problem->id,
             'language' => $languageWithVersion,
             'code' => json_encode($codeContent),
-            'verdict' => 'Compiling',
+            'status' => 'Queued',
         ]);
 
-        TestCodeJob::dispatch($host, $submission, $language, $version);
-        return response()->json(['message' => 'Iberilen kod tabşyryldy we kompilýasiýa edilýär']);
+        // Dispatch to judge-box via Redis queue
+        GradeSubmissionJob::dispatch(
+            $submission->id,
+            $languageKey,
+            $version,
+            $problem->time_limit ?? 1,
+            $problem->memory_limit ?? 256
+        );
+
+        return response()->json(['message' => 'Iberilen kod tabşyryldy we gözegçilenýär']);
     }
 }
