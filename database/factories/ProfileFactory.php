@@ -18,8 +18,6 @@ class ProfileFactory extends Factory
     {
         return [
             'user_id' => null,
-            'first_name' => fake()->name(),
-            'last_name' => fake()->name(),
             'country_id' => rand(1,\App\Models\Country::count()),
             'image' => null,
         ];

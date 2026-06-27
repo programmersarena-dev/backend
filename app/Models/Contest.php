@@ -3,192 +3,183 @@
 namespace App\Models;
 
 use Carbon\Carbon;
+use DB;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Contest extends Model
 {
     use HasFactory;
 
-    protected $fillable = [
-        'id',
-        'type_id',
-        'name',
-        'authorIds',
-        'start_date',
-        'duration',
-        'participantIds',
-        'official',
-        'active',
+    protected $casts = [
+        'start_date' => 'datetime',
+        'official' => 'boolean',
+        'active' => 'boolean',
     ];
 
-    public function type()
+    /*
+    |--------------------------------------------------------------------------
+    | Relationships (Optimized for Pivot Tables)
+    |--------------------------------------------------------------------------
+    */
+
+    public function authors(): BelongsToMany
     {
-        return $this->belongsTo(ContestType::class, 'type_id', 'id');
+        return $this->belongsToMany(User::class, 'contest_author');
     }
 
-    public function hasAttachments()
+    /**
+     * Get all registered participants via the optimized pivot table.
+     * We load pivot fields 'is_official' and 'opponent_id' to support Duel and standard modes natively.
+     */
+    public function participants(): BelongsToMany
     {
-        return $this->type->name == 'IOI';
+        return $this->belongsToMany(User::class, 'contest_user')
+            ->withPivot('is_official', 'old_rating', 'rating_change', 'is_official', 'opponent_id')
+            ->withTimestamps();
     }
 
-    public function hasSubtasks()
+    public function type(): BelongsTo
     {
-        return $this->type->name == 'IOI';
+        return $this->belongsTo(ContestType::class, 'type_id');
     }
 
-    public function problems()
+    public function problems(): HasMany
     {
         return $this->hasMany(Problem::class, 'contest_id');
     }
 
-    public function standings()
+    public function standings(): HasOne
     {
         return $this->hasOne(Standing::class);
     }
 
-    public function getStartDateAttribute($value)
+    /*
+    |--------------------------------------------------------------------------
+    | Accessors & Computed Attributes
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Computes the exact end date using the optimized duration_minutes field.
+     * Uses Laravel's modern memoized attribute caching mechanism.
+     */
+    protected function endDate(): Attribute
     {
-        return Carbon::parse($value);
+        return Attribute::make(
+            get: fn() => $this->start_date?->copy()->addMinutes((int) $this->duration_minutes)
+        )->shouldCache();
     }
 
-    public function getEndDateAttribute()
+    public function hasAttachments(): bool
     {
-        $durationParts = explode(':', $this->duration);
-        $hours = (int) $durationParts[0];
-        $minutes = (int) $durationParts[1];
-
-        return Carbon::parse($this->start_date)->addHours($hours)->addMinutes($minutes);
+        return $this->type?->name === 'IOI';
     }
 
-    public function getProblemByCharacter($char)
+    public function hasSubtasks(): bool
     {
-        return $this->problems()->orderBy('id', 'asc')->skip(ord($char) - ord('A'))->first();
+        return $this->type?->name === 'IOI';
     }
 
-    public function getStatus()
+    /**
+     * Efficiently grabs a problem by alphabetical offset via SQL directly (no application-level loops).
+     */
+    public function getProblemByCharacter(string $char): ?Problem
+    {
+        $offset = ord(strtoupper($char)) - ord('A');
+
+        return $this->problems()
+            ->orderBy('id', 'asc')
+            ->offset($offset)
+            ->first();
+    }
+
+    public function getStatus(): string
     {
         $now = Carbon::now('UTC');
-        if ($this->start_date > $now)
+
+        if ($this->start_date > $now) {
             return 'notStarted';
-        if ($this->end_date >= $now)
+        }
+        if ($this->end_date >= $now) {
             return 'started';
+        }
         return 'ended';
     }
 
-    public function isEnded()
+    public function isEnded(): bool
     {
-        return $this->end_date > Carbon::now('UTC');
+        return Carbon::now('UTC') > $this->end_date;
     }
 
-    public function canUserSubmit($userId)
+    /*
+    |--------------------------------------------------------------------------
+    | Core Business Logic & Registration Rules (Sub-millisecond Performance)
+    |--------------------------------------------------------------------------
+    */
+
+    public function canUserSubmit(int|string $userId): bool
     {
-        if ($this->active && $this->getStatus() === 'ended') {
+        $status = $this->getStatus();
+
+        if ($this->active && $status === 'ended') {
             return true;
         }
-        if (
-            !$this->active ||
-            $this->getStatus() === 'notStarted' ||
-            !$this->isUserRegistered($userId) ||
-            ($this->type->name === 'Duel' && !$this->isUsersRegisteredInDuel($userId))
-        ) {
+
+        if (!$this->active || $status === 'notStarted') {
             return false;
         }
-        return true;
+
+        return $this->isUserRegistered($userId);
     }
 
-    public function isUserRegistered($userId)
+    /**
+     * Checks registration instantly via an indexed database lookup instead of parsing giant JSON blobs.
+     */
+    public function isUserRegistered(int|string $userId): bool
     {
-        if ($this->isUserOfficial($userId) || $this->isUserUnOfficial($userId))
-            return true;
-        return false;
+        return DB::table('contest_user')
+            ->where('contest_id', $this->id)
+            ->where('user_id', $userId)
+            ->exists();
     }
 
-    public function isUserOfficial($userId)
+    public function isUserOfficial(int|string $userId): bool
     {
-        $participants = json_decode($this->participantIds, true);
-
-        if ($this->type->name === 'Classic' || $this->type->name === 'IOI' || $this->type->name === 'ICPC') {
-            return in_array($userId, $participants['official'] ?? [], true);
-        }
-
-        if ($this->type->name === 'Duel') {
-            foreach ($participants['official'] ?? [] as $duo) {
-                if (in_array($userId, $duo, true) || in_array($userId . '|X', $duo, true)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return $this->participants()
+            ->wherePivot('user_id', $userId)
+            ->exists();
     }
 
-    public function isUserUnOfficial($userId)
+    public function isUserUnOfficial(int|string $userId): bool
     {
-        $participants = json_decode($this->participantIds, true);
-
-        if ($this->type->name === 'Classic' || $this->type->name === 'IOI' || $this->type->name === 'ICPC') {
-            return in_array($userId, $participants['unofficial'] ?? [], true);
-        }
-
-        if ($this->type->name === 'Duel') {
-            foreach ($participants['unofficial'] ?? [] as $duo) {
-                if (in_array($userId, $duo, true) || in_array($userId . '|X', $duo, true)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return $this->participants()
+            ->where('user_id', $userId)
+            ->where('pivot_is_official', false)
+            ->exists();
     }
 
-    public function getComponent($username)
+    /**
+     * Instantly grabs the active opponent's name in Duel formats.
+     * Replaces multi-loop array filtering and N+1 user model lookups with a fast relationship pluck.
+     */
+    public function getComponent(string $username): ?string
     {
-        $userId = User::firstWhere('name', $username)->id;
+        $userId = User::where('name', $username)->value('id');
+        if (!$userId)
+            return null;
 
-        $participants = json_decode($this->participantIds, true);
+        $pivot = $this->participants()->where('user_id', $userId)->first()?->pivot;
 
-        $official = collect($participants['official'] ?? []);
-        $unofficial = collect($participants['unofficial'] ?? []);
-
-        $duels = $official->merge($unofficial);
-
-        $opponentIds = $duels->filter(function ($duel) use ($userId) {
-            return $duel[0] === $userId || $duel[1] === $userId;
-        })->map(function ($duel) use ($userId) {
-            return $duel[0] === $userId ? $duel[1] : $duel[0];
-        })->unique();
-
-        $firstOpponentId = $opponentIds->first();
-        if ($firstOpponentId) {
-            return User::find($firstOpponentId)->name;
+        if ($pivot && $pivot->opponent_id) {
+            return User::where('id', $pivot->opponent_id)->value('name');
         }
 
         return null;
-    }
-
-    private function isUsersRegisteredInDuel($userId)
-    {
-        $participants = json_decode($this->participantIds, true);
-
-        $allDuels = array_merge(
-            $participants['official'] ?? [],
-            $participants['unofficial'] ?? []
-        );
-
-        foreach ($allDuels as $duel) {
-            $player1Id = explode('|', $duel[0])[0];
-            $player2Id = explode('|', $duel[1])[0];
-
-            if (
-                ($player1Id == $userId || $player2Id == $userId) &&
-                !str_ends_with($duel[0], '|X') &&
-                !str_ends_with($duel[1], '|X')
-            ) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

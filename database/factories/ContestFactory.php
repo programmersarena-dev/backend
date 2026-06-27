@@ -16,20 +16,21 @@ class ContestFactory extends Factory
      */
     public function definition(): array
     {
-        $start_date = $this->faker->boolean(1)
-            ? $this->faker->dateTimeBetween('+1 day', '+5 days')
-            : $this->faker->dateTimeBetween('-500 days', '-1 day');
+        $startDate = $this->faker->boolean(10)
+            ? $this->faker->dateTimeBetween('+1 day', '+7 days')
+            : $this->faker->dateTimeBetween('-60 days', '-1 day');
+
         return [
             'type_id' => $this->faker->numberBetween(1, 4),
-            'name' => $this->faker->sentence(3),
-            'authorIds' => '[]',
-            'start_date' => $start_date,
-            'duration' => sprintf('%02d:00', $this->faker->numberBetween(1, 5)),
-            'participantIds' => '{"official":[],"unofficial":[]}',
-            'official' => $this->faker->boolean(50),
+            'name' => rtrim($this->faker->sentence(3), '.'),
+            'start_date' => $startDate,
+
+            'duration_minutes' => $this->faker->randomElement([60, 120, 180, 240, 300]),
+
+            'official' => $this->faker->boolean(40),
             'active' => true,
-            'created_at' => $start_date,
-            'updated_at' => $start_date,
+            'created_at' => $startDate,
+            'updated_at' => $startDate,
         ];
     }
 }

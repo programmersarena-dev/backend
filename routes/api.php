@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\ImageController as AdminImageController;
+use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\FileController;
 use App\Http\Controllers\ContestController;
@@ -18,9 +19,6 @@ use App\Http\Controllers\Admin\ContestController as AdminContestController;
 use App\Http\Controllers\Admin\ProblemController as AdminProblemController;
 use App\Models\ContestType;
 use App\Models\User;
-use Illuminate\Foundation\Auth\EmailVerificationRequest;
-use App\Http\Controllers\Auth\PasswordResetController;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -34,29 +32,26 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::get('/lang', [LocalizationController::class, 'getLocale']);
-Route::post('/lang/{locale}', [LocalizationController::class, 'setLocale'])->name('set-locale');
-
-Route::post('/sign-up', [AuthController::class, 'signup'])->name('signup');
-Route::post('/login', [AuthController::class, 'login'])->name('login');
-Route::get('/me', [AuthController::class, 'me']);
-Route::get('/user-activity', [AuthController::class, 'user_activity']);
-Route::post('/password/email', [PasswordResetController::class, 'sendResetLinkEmail'])->name('password.email');
-Route::post('/password/reset', [PasswordResetController::class, 'reset'])->name('password.reset');
-Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
-
-Route::group(['prefix' => '/email'], function () {
-    Route::get('/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
-        $request->fulfill();
-        return redirect(env('REACT_APP_URL') . '/email/verify/{id}/{hash}');
-    })->middleware(['auth:sanctum', 'signed'])->name('verification.verify');
-    Route::post('/resend', function (Request $request) {
-        $request->user()->sendEmailVerificationNotification();
-        return back()->with('message', 'Verification link sent!');
-    })->middleware(['auth:sanctum', 'throttle:6,1'])->name('verification.resend');
+Route::prefix('auth')->group(function () {
+    Route::post('/signup', [AuthController::class, 'signup']);
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/refresh', [AuthController::class, 'refresh']);
 });
 
-Route::get('/countries', [CountryController::class, 'index']);
+Route::middleware('auth:sanctum')->prefix('auth')->group(function () {
+    Route::get('/me', [AuthController::class, 'me']);
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::post('/activity', [AuthController::class, 'user_activity']);
+});
+
+Route::group(['prefix' => '/email'], function () {
+    Route::get('/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])->middleware(['signed'])->name('verification.verify');
+    Route::post('/resend', [EmailVerificationController::class, 'resend'])->middleware(['auth:sanctum', 'throttle:6,1'])->name('verification.resend');
+});
+
+Route::post('/locale', [LocalizationController::class, 'setLocale'])->name('api.locale.set');
+
+Route::get('/countries', [CountryController::class, 'index'])->name('api.countries.index');
 
 Route::group(['prefix' => '/blogs'], function () {
     Route::get('/', [BlogController::class, 'index']);

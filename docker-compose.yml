@@ -1,7 +1,4 @@
-version: "3.8"
-
 services:
-    # Redis Cache & Queue
     redis:
         image: redis:7-alpine
         container_name: laravel-redis
@@ -11,67 +8,17 @@ services:
             - app-network
         volumes:
             - redis_data:/data
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
 
-    # Laravel App (Web)
-    laravel:
-        build:
-            context: ./
-            dockerfile: Dockerfile
-        container_name: laravel-app
-        volumes:
-            - ./:/var/www/html
-            - /var/run/docker.sock:/var/run/docker.sock
-        ports:
-            - "8000:80"
-        networks:
-            - app-network
-        depends_on:
-            - db
-            - redis
-        env_file:
-            - .env
-        command: sh -c "mkdir -p /tmp/run/php && chown -R www-data:www-data /tmp/run /tmp/nginx-logs && php-fpm --fpm-config /usr/local/etc/php-fpm.conf --daemonize && nginx -g 'daemon off;'"
-
-    # Laravel Queue Worker (for submission grading jobs to judge-box)
-    queue-worker:
-        build:
-            context: ./
-            dockerfile: Dockerfile
-        container_name: laravel-queue-worker
-        volumes:
-            - ./:/var/www/html
-            - ./storage/app/tmp:/var/www/html/storage/app/tmp
-            - /var/run/docker.sock:/var/run/docker.sock
-        networks:
-            - app-network
-        depends_on:
-            - db
-            - redis
-        env_file:
-            - .env
-        command: php /var/www/html/artisan queue:work redis --sleep=3 --tries=3
-
-    # Judge Result Consumer (listens to judge:results queue from judge-box)
-    judge-consumer:
-        build:
-            context: ./
-            dockerfile: Dockerfile
-        container_name: judge-result-consumer
-        volumes:
-            - ./:/var/www/html
-        networks:
-            - app-network
-        depends_on:
-            - db
-            - redis
-        env_file:
-            - .env
-        command: php /var/www/html/artisan judge:worker
-
-    # PostgreSQL Database
     db:
         image: postgres:14
         container_name: postgres-db
+        env_file:
+            - .env
         environment:
             POSTGRES_DB: ${DB_DATABASE}
             POSTGRES_USER: ${DB_USERNAME}
@@ -82,8 +29,81 @@ services:
             - app-network
         volumes:
             - pgdata:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    laravel:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: laravel-app
         env_file:
             - .env
+        entrypoint:
+            - /usr/local/bin/docker-entrypoint.sh
+        volumes:
+            - ./:/var/www/html
+            - vendor:/var/www/html/vendor
+            - storage:/var/www/html/storage
+            - bootstrap_cache:/var/www/html/bootstrap/cache
+            - /var/run/docker.sock:/var/run/docker.sock
+        ports:
+            - "8000:80"
+        networks:
+            - app-network
+        depends_on:
+            - db
+            - redis
+        restart: unless-stopped
+        command: sh -c "php-fpm --fpm-config /usr/local/etc/php-fpm.conf --daemonize && nginx -g 'daemon off;'"
+
+    queue-worker:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: laravel-queue-worker
+        env_file:
+            - .env
+        entrypoint:
+            - /usr/local/bin/docker-entrypoint.sh
+        volumes:
+            - ./:/var/www/html
+            - vendor:/var/www/html/vendor
+            - storage:/var/www/html/storage
+            - bootstrap_cache:/var/www/html/bootstrap/cache
+            - /var/run/docker.sock:/var/run/docker.sock
+        networks:
+            - app-network
+        depends_on:
+            - db
+            - redis
+        restart: unless-stopped
+        command: sh -c "php /var/www/html/artisan queue:work redis --sleep=3 --tries=3"
+
+    judge-consumer:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: judge-result-consumer
+        env_file:
+            - .env
+        entrypoint:
+            - /usr/local/bin/docker-entrypoint.sh
+        volumes:
+            - ./:/var/www/html
+            - vendor:/var/www/html/vendor
+            - storage:/var/www/html/storage
+            - bootstrap_cache:/var/www/html/bootstrap/cache
+        networks:
+            - app-network
+        depends_on:
+            - db
+            - redis
+        restart: unless-stopped
+        command: sh -c "php /var/www/html/artisan judge:worker"
 
 networks:
     app-network:
@@ -92,3 +112,6 @@ networks:
 volumes:
     pgdata:
     redis_data:
+    vendor:
+    storage:
+    bootstrap_cache:

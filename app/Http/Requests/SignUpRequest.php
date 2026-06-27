@@ -23,18 +23,46 @@ class SignUpRequest extends FormRequest
     public function rules(): array
     {
         return [
-            // TODO username should not contain spaces and etc.
-            'name' => 'required|string|unique:users,name',
-            'email' => 'required|email|string|unique:users,email',
+            'handle' => [
+                'required',
+                'string',
+                'alpha_dash',
+                'min:3',
+                'max:32',
+                'unique:users,handle'
+            ],
+
+            'first_name' => ['required', 'string', 'max:32'],
+            'last_name' => ['required', 'string', 'max:32'],
+
+            'email' => [
+                'required',
+                'string',
+                'email',
+                'max:128',
+                'unique:users,email'
+            ],
+
             'password' => [
                 'required',
+                'string',
                 'confirmed',
-                Password::min(8)->mixedCase()->numbers()->symbols()
+                Password::min(8)
+                    ->mixedCase()
+                    ->numbers()
+                    ->symbols()
+                    ->uncompromised(),
             ],
-            'first_name' => 'required|string',
-            'last_name' => 'required|string',
-            'country_id' => 'required',
-            'image' => 'image|mimes:jpg,png,jpeg,gif|max:2048',
+
+            'country_id' => ['required', 'integer', 'exists:countries,id'],
+
+            'image' => [
+                'nullable',
+                'file',
+                'image',
+                'mimes:jpg,png,jpeg,gif',
+                'max:2048'
+            ],
         ];
     }
 }

@@ -23,25 +23,42 @@ class UserFactory extends Factory
      */
     public function definition(): array
     {
+        $createdAt = $this->faker->dateTimeBetween('-500 days', '-2 days');
+
         return [
-            'user_type' => 'user',
-            'name' => str_replace(' ', '_', fake()->name()),
+            'handle' => fake()->unique()->userName(),
+            'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
-            'email_verified_at' => now(),
+            'user_type' => 'user',
+            'locale' => fake()->randomElement(['tk', 'en', 'ru']),
+
             'password' => static::$password ??= Hash::make('password'),
+            'email_verified_at' => now(),
             'remember_token' => Str::random(10),
-            'created_at' => $this->faker->dateTimeBetween('-500 days', '-1 day'),
-            'updated_at' => $this->faker->dateTimeBetween('-500 days', '-1 day'),
+            'last_activity' => fake()->boolean(70) ? fake()->dateTimeBetween('-5 days', 'now') : null,
+
+            'created_at' => $createdAt,
+            'updated_at' => fake()->dateTimeBetween($createdAt, 'now'),
         ];
     }
 
     /**
-     * Indicate that the model's email address should be unverified.
+     * State indicator for unverified platform accounts.
      */
     public function unverified(): static
     {
         return $this->state(fn(array $attributes) => [
             'email_verified_at' => null,
+        ]);
+    }
+
+    /**
+     * State helper to easily spin up testing admin environments.
+     */
+    public function admin(): static
+    {
+        return $this->state(fn(array $attributes) => [
+            'user_type' => 'admin',
         ]);
     }
 }

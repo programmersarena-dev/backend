@@ -17,7 +17,7 @@ class ProblemFactory extends Factory
     public function definition(): array
     {
         return [
-            'contest_id'   => null,
+            'contest_id'   => 1,
             'name'         => $this->faker->words(3, true),
             'tags'         => json_encode($this->faker->randomElements(['dp', 'graph', 'math', 'greedy'], rand(1, 3))),
             'time_limit'   => rand(1,5),

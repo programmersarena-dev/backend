@@ -2,7 +2,6 @@
 
 namespace App\Http\Resources;
 
-use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Auth;
@@ -18,80 +17,63 @@ class ContestListResource extends JsonResource
     {
         $user = Auth::guard('sanctum')->user();
 
-        static $users;
-        if (!$users) {
-            $users = User::all()->keyBy('id');
-        }
+        $authorNames = $this->authors->pluck('name');
 
-        $authorNames = collect(json_decode($this->authorIds))->map(function ($userId) use ($users) {
-            return $users[$userId]->name ?? 'Undefined';
-        });
+        $officialParticipants = [];
+        $unofficialParticipants = [];
 
-        $data = json_decode($this->participantIds, true);
+        if ($this->type?->name === 'Duel') {
+            $participantMap = $this->participants->keyBy('id');
 
-        if ($this->type->name === 'Classic' || $this->type->name === 'IOI' || $this->type->name === 'ICPC') {
-            $official_participants = collect($data['official'])->map(fn($userId) => $users[$userId]->name ?? 'Undefined');
-            $unofficial_participants = collect($data['unofficial'])->map(fn($userId) => $users[$userId]->name ?? 'Undefined');
-        } else if ($this->type->name === 'Duel') {
-            $official_participants = collect($data['official'])->map(function ($duo) use ($users) {
-                if (!is_array($duo) || count($duo) < 2) {
-                    return ['Undefined', 'Undefined'];
+            foreach ($this->participants as $participant) {
+                $opponentId = $participant->pivot->opponent_id;
+                $opponentName = $participantMap->get($opponentId)?->name ?? 'Undefined';
+
+                $pairing = [$participant->name, $opponentName];
+
+                if ($participant->pivot->is_official) {
+                    $officialParticipants[] = $pairing;
+                } else {
+                    $unofficialParticipants[] = $pairing;
                 }
-                return [
-                    $users[$duo[0]]->name ?? $users[explode('|', $duo[0])[0]]->name . '|X' ?? 'Undefined',
-                    $users[$duo[1]]->name ?? $users[explode('|', $duo[1])[0]]->name . '|X' ?? 'Undefined',
-                ];
-            });
-
-            $unofficial_participants = collect($data['unofficial'])->map(function ($duo) use ($users) {
-                if (!is_array($duo) || count($duo) < 2) {
-                    return ['Undefined', 'Undefined'];
+            }
+        } else {
+            foreach ($this->participants as $participant) {
+                if ($participant->pivot->is_official) {
+                    $officialParticipants[] = $participant->name;
+                } else {
+                    $unofficialParticipants[] = $participant->name;
                 }
-                return [
-                    $users[$duo[0]]->name ?? $users[explode('|', $duo[0])[0]]->name . '|X' ?? 'Undefined',
-                    $users[$duo[1]]->name ?? $users[explode('|', $duo[1])[0]]->name . '|X' ?? 'Undefined',
-                ];
-            });
+            }
         }
 
-        if ($user && $user->user_type === 'admin') {
-            return [
-                'id' => $this->id,
-                'type' => $this->type->name,
-                'name' => $this->name,
-                'authors' => $authorNames,
-                'start_date' => $this->start_date,
-                'end_date' => $this->end_date,
-                'duration' => (new \DateTime($this->duration))->format('H:i'),
-                'participants' => [
-                    'official' => $official_participants,
-                    'unofficial' => $unofficial_participants,
-                ],
-                'official' => boolval($this->official),
-                'attachments' => boolval($this->hasAttachments()),
-                'subtasks' => boolval($this->hasSubtasks()),
-                'status' => $this->getStatus(),
-                'is_registered' => $user ? boolval($this->isUserRegistered($user->id)) : false,
-                'active' => boolval($this->active),
-            ];
-        }
-        return [
+        $hours = floor($this->duration_minutes / 60);
+        $minutes = $this->duration_minutes % 60;
+        $formattedDuration = sprintf('%02d:%02d', $hours, $minutes);
+
+        $responsePayload = [
             'id' => $this->id,
-            'type' => $this->type->name,
+            'type' => $this->type?->name,
             'name' => $this->name,
             'authors' => $authorNames,
             'start_date' => $this->start_date,
             'end_date' => $this->end_date,
-            'duration' => (new \DateTime($this->duration))->format('H:i'),
+            'duration' => $formattedDuration,
             'participants' => [
-                'official' => $official_participants,
-                'unofficial' => $unofficial_participants,
+                'official' => $officialParticipants,
+                'unofficial' => $unofficialParticipants,
             ],
-            'official' => boolval($this->official),
-            'attachments' => boolval($this->hasAttachments()),
-            'subtasks' => boolval($this->hasSubtasks()),
+            'official' => (bool) $this->official,
+            'attachments' => (bool) $this->hasAttachments(),
+            'subtasks' => (bool) $this->hasSubtasks(),
             'status' => $this->getStatus(),
-            'is_registered' => $user ? boolval($this->isUserRegistered($user->id)) : false,
+            'is_registered' => $user ? (bool) $this->isUserRegistered($user->id) : false,
         ];
+
+        if ($user && $user->user_type === 'admin') {
+            $responsePayload['active'] = (bool) $this->active;
+        }
+
+        return $responsePayload;
     }
 }

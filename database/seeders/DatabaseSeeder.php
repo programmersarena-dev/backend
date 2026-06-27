@@ -19,14 +19,25 @@ class DatabaseSeeder extends Seeder
         ]);
 
         if (app()->environment('local')) {
-            \App\Models\User::factory(300)->create()->each(function ($user) {
+            \App\Models\User::factory(50)->create()->each(function ($user) {
                 \App\Models\Profile::factory()->create(['user_id' => $user->id]);
             });
             \App\Models\Blog::factory(100)->create();
-            \App\Models\Contest::factory(100)->create()->each(function ($contest) {
-                $test_cases = $contest->type() == 'IOI' ? 'test_cases/sample_subtasks' : 'test_cases/sample';
-                \App\Models\Problem::factory(rand(4, 6))->create(['contest_id' => $contest->id, 'test_cases' => $test_cases]);
-                \App\Models\Standing::factory()->create(['contest_id' => $contest->id]);
+            $contests = \App\Models\Contest::factory(100)->create();
+
+            $contests->each(function ($contest) {
+                $testCasesPath = $contest->hasAttachments()
+                    ? 'test_cases/sample_subtasks'
+                    : 'test_cases/sample';
+
+                \App\Models\Problem::factory(rand(4, 6))->create([
+                    'contest_id' => $contest->id,
+                    'test_cases' => $testCasesPath
+                ]);
+
+                \App\Models\Standing::factory()->create([
+                    'contest_id' => $contest->id
+                ]);
             });
             \App\Models\Submission::factory(500)->create();
         }

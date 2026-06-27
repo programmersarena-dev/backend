@@ -129,8 +129,6 @@ Backend communicates with judge-box via Redis queues:
 - **Job Queue**: `judge:jobs` — receives grading jobs
 - **Result Queue**: `judge:results` — receives verdicts
 
-See [../JUDGE_BOX_INTEGRATION.md](../JUDGE_BOX_INTEGRATION.md) for complete setup details.
-
 ### Commands
 
 ```bash

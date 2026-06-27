@@ -3,120 +3,194 @@
 namespace App\Http\Controllers;
 
 use Carbon\Carbon;
+use App\Models\User;
+use App\Models\Profile;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\SignUpRequest;
-use App\Models\Profile;
-use App\Models\User;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB; // Added for Transactions
-use Illuminate\Support\Facades\Hash; // Added for password checking
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Symfony\Component\HttpFoundation\Cookie;
 
 class AuthController extends Controller
 {
+    // Token Lifetime Constants
+    private const ACCESS_TOKEN_EXPIRY_MINUTES = 15;
+    private const REFRESH_TOKEN_EXPIRY_MINUTES = 14400; // 10 Days
+    private const REFRESH_COOKIE_NAME = 'refresh_token';
+
+    /**
+     * Register a new user and return structural access metrics.
+     */
     public function signup(SignUpRequest $request)
     {
         $data = $request->validated();
 
-        // Use a Transaction to ensure both User and Profile are created, or neither.
         $result = DB::transaction(function () use ($data) {
-
-            /** @var \App\Models\User $user */
+            /** @var User $user */
             $user = User::create([
-                'name' => $data['name'],
+                'handle' => $data['handle'],
+                'name' => $data['first_name'] + ' ' + $data['last_name'],
                 'email' => $data['email'],
-                'password' => Hash::make($data['password']), // Hash::make is preferred over bcrypt() helper
+                'password' => Hash::make($data['password']),
             ]);
 
             Profile::create([
                 'user_id' => $user->id,
-                'first_name' => $data['first_name'],
-                'last_name' => $data['last_name'],
                 'country_id' => $data['country_id'],
             ]);
 
-            $token = $user->createToken('main')->plainTextToken;
-
-            // Optional: Move email sending outside transaction or use Queues to prevent lag
             $user->sendEmailVerificationNotification();
 
-            return [
-                'user' => $user,
-                'token' => $token
-            ];
+            return $user;
         });
 
-        return response([
-            'message' => 'Hasabyňyz üstünlikli döredildi. E-poçtaňyzy barlaň!',
-            'user' => $result['user'],
-            'token' => $result['token']
-        ], 201);
+        // Issue tokens directly upon successful sign-up
+        [$accessToken, $cookie] = $this->issueTokens($result);
+
+        return response()->json([
+            'message' => __('messages.signup_success'), // Dynamic Localization
+            'user' => $result,
+            'token' => $accessToken
+        ], 201)->withCookie($cookie);
     }
 
+    /**
+     * Authenticate user, evaluate active device concurrency constraints,
+     * and attach stateful HttpOnly refresh keys.
+     */
     public function login(LoginRequest $request)
     {
         $data = $request->validated();
 
-        $user = User::where('email', $data['email'])->first();
+        $loginField = filter_var($data['login'], FILTER_VALIDATE_EMAIL) ? 'email' : 'handle';
 
-        // Check password manually to avoid starting a Session (Auth::attempt) if this is pure API
+        $user = User::where($loginField, $data['login'])->first();
+
         if (!$user || !Hash::check($data['password'], $user->password)) {
-            return response()->json(['message' => 'Berlen maglumatlar dogry däl'], 422);
+            return response()->json(['message' => __('messages.invalid_credentials')], 422);
         }
-
-        // --- SINGLE DEVICE LOGIC (IMPROVED) ---
-        // Instead of blocking the user for 10 minutes, we invalidate the PREVIOUS sessions.
-        // This prevents the "I closed my tab and now I'm locked out" error.
 
         if ($user->last_activity) {
             $lastActivity = Carbon::parse($user->last_activity)->addMinutes(10);
-            $now = Carbon::now('UTC');
 
-            // If user is active elsewhere, we have two choices:
-            // 1. Block them (Your original code)
-            // 2. Kick the other device (Recommended code below)
-
-            if ($lastActivity > $now) {
-                 // Option A: Strictly Single Device (Kicks out previous user)
-                 $user->tokens()->delete();
-
-                 // Option B: If you really want to block them, keep your original if statement here.
+            if ($lastActivity->isFuture()) {
+                $user->tokens()->delete();
             }
         }
 
-        // Update activity immediately on login
-        $user->last_activity = Carbon::now();
-        $user->save();
+        $user->forceFill(['last_activity' => Carbon::now()])->save();
 
-        $token = $user->createToken('main')->plainTextToken;
+        [$accessToken, $cookie] = $this->issueTokens($user);
 
-        return response([
-            'message' => 'Giriş üstünlikli',
+        return response()->json([
+            'message' => __('messages.login_success'),
             'user' => $user,
-            'token' => $token
-        ]);
+            'token' => $accessToken
+        ])->withCookie($cookie);
     }
 
+    /**
+     * Mark the authenticated user's email address as verified.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  string|int  $id
+     * @param  string  $hash
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function verify(Request $request, $id, $hash): JsonResponse
+    {
+        if (!$request->hasValidSignature()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => __('messages.email_invalid_signature', [], 'tk')
+            ], 403);
+        }
+
+        $user = User::findOrFail($id);
+
+        if (!hash_equals((string) $hash, sha1($user->getEmailForVerification()))) {
+            return response()->json([
+                'status' => 'error',
+                'message' => __('messages.email_invalid_hash', [], 'tk')
+            ], 403);
+        }
+
+        if ($user->hasVerifiedEmail()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => __('messages.email_already_verified', [], 'tk')
+            ], 200);
+        }
+
+        if ($user->markEmailAsVerified()) {
+            event(new \Illuminate\Auth\Events\Verified($user));
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => __('messages.email_verified_success', [], 'tk')
+        ], 200);
+    }
+
+    /**
+     * Parse incoming safe cookie payloads to issue regenerated token rotations.
+     */
+    public function refresh(Request $request)
+    {
+        $refreshToken = $request->cookie(self::REFRESH_COOKIE_NAME);
+
+        if (!$refreshToken) {
+            return response()->json(['message' => __('messages.unauthorized')], 401);
+        }
+
+        // Parse and validate the token from Sanctum's personal access token store
+        $tokenModel = \Laravel\Sanctum\PersonalAccessToken::findToken($refreshToken);
+
+        if (!$tokenModel || $tokenModel->expires_at?->isPast()) {
+            return response()->json(['message' => __('messages.unauthorized')], 401);
+        }
+
+        /** @var User $user */
+        $user = $tokenModel->tokenable;
+
+        // Clean up both the old single-use access and old refresh strings to prevent creep
+        $tokenModel->delete();
+
+        [$newAccessToken, $newCookie] = $this->issueTokens($user);
+
+        return response()->json([
+            'token' => $newAccessToken
+        ])->withCookie($newCookie);
+    }
+
+    /**
+     * Terminate the API Bearer sessions and explicitly clear stateful HttpOnly cookies.
+     */
     public function logout(Request $request)
     {
         /** @var User $user */
-        // Use Auth::user() which returns the authenticated user regardless of the guard (sanctum or web)
         $user = Auth::user();
 
         if ($user) {
             $currentAccessToken = $user->currentAccessToken();
 
             if ($currentAccessToken && property_exists($currentAccessToken, 'id')) {
-                // Delete the API token record using its ID via the relationship
                 $user->tokens()->where('id', $currentAccessToken->id)->delete();
             }
 
-            // Clear Remember Token (for web guard/session persistence)
+            // Remove long-lived refresh references explicitly from the database
+            if ($refreshToken = $request->cookie(self::REFRESH_COOKIE_NAME)) {
+                if ($tokenModel = \Laravel\Sanctum\PersonalAccessToken::findToken($refreshToken)) {
+                    $tokenModel->delete();
+                }
+            }
+
             $user->setRememberToken(null);
             $user->save();
 
-            // Check if the user is authenticated via the session (web guard)
-            // We use the default web guard to explicitly perform session logout, preventing the error.
             if (Auth::guard('web')->check()) {
                 Auth::guard('web')->logout();
                 $request->session()->invalidate();
@@ -124,27 +198,66 @@ class AuthController extends Controller
             }
         }
 
-        return response([
+        // Clear the cookie inside the client browser by forcing instant expiration
+        $forgetCookie = cookie()->forget(self::REFRESH_COOKIE_NAME);
+
+        return response()->json([
             'success' => true,
-            'message' => 'Ulgamdan çykyldy'
-        ]);
+            'message' => __('messages.logout_success')
+        ])->withCookie($forgetCookie);
     }
 
     public function me()
     {
-        return Auth::guard('sanctum')->user();
+        $user = Auth::guard('sanctum')->user();
+
+        if (!$user) {
+            return response()->json([
+                'message' => __('messages.unauthorized')
+            ], 401);
+        }
+
+        return response()->json($user);
     }
 
-    // Best Practice: Move this logic to a Middleware later
     public function user_activity()
     {
         $user = Auth::guard('sanctum')->user();
 
         if ($user) {
-            // Use updateQuietly if you have Observers you don't want to trigger
-            $user->forceFill(['last_activity' => Carbon::now()])->save();
+            $user->forceFill(['last_activity' => Carbon::now()])->saveQuietly();
         }
 
         return response()->noContent();
+    }
+
+    /**
+     * Architecture Helper: Atomic generation of standard short access arrays
+     * paired with long security cookie properties.
+     */
+    private function issueTokens(User $user): array
+    {
+        // 1. Create Short-Lived Access Token string
+        $accessExpiry = Carbon::now()->addMinutes(self::ACCESS_TOKEN_EXPIRY_MINUTES);
+        $accessTokenResult = $user->createToken('access_token', ['*'], $accessExpiry);
+
+        // 2. Create Long-Lived Refresh Token string (FIXED PROPERTY NAME HERE)
+        $refreshExpiry = Carbon::now()->addMinutes(self::REFRESH_TOKEN_EXPIRY_MINUTES);
+        $refreshTokenResult = $user->createToken('refresh_token', ['issue-access-token'], $refreshExpiry);
+
+        // 3. Encapsulate Refresh string into a secure back-channel cookie instance
+        $cookie = cookie(
+            self::REFRESH_COOKIE_NAME,
+            $refreshTokenResult->plainTextToken,
+            self::REFRESH_TOKEN_EXPIRY_MINUTES,
+            '/',                  // Path
+            null,                 // Domain
+            true,                 // Secure (HTTPS)
+            true,                 // HttpOnly
+            false,                // Raw
+            Cookie::SAMESITE_STRICT // SameSite Cross-Origin Mitigation
+        );
+
+        return [$accessTokenResult->plainTextToken, $cookie];
     }
 }

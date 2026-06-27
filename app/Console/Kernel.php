@@ -20,5 +20,6 @@ class Kernel extends ConsoleKernel
      */
     protected $commands = [
         // \App\Console\Commands\DispatchUnverifiedUsersJob::class,
+        \App\Console\Commands\JudgeQueueWorker::class,
     ];
 }

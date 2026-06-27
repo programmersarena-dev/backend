@@ -4,107 +4,126 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\SubmitProblemRequest;
 use App\Models\Contest;
-use App\Models\Problem;
 use App\Models\Submission;
-use Carbon\Carbon;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use App\Jobs\TestCodeJob;
 use App\Jobs\GradeSubmissionJob;
 use App\Http\Resources\SubmissionResource;
+use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Auth;
 
 class SubmissionController extends Controller
 {
-    public function index()
+    /**
+     * Fetch paginated list of all submissions.
+     */
+    public function index(): AnonymousResourceCollection
     {
-        return SubmissionResource::collection(Submission::query()->orderBy('id', 'desc')->paginate(100));
+        return SubmissionResource::collection(
+            Submission::query()
+                ->with(['user', 'problem'])
+                ->orderBy('id', 'desc')
+                ->paginate(100)
+        );
     }
 
-    public function getByProblem($contestProblem, Request $request)
+    /**
+     * Fetch submissions filtered by problem character code.
+     */
+    public function getByProblem(string $contestProblem, Request $request): AnonymousResourceCollection
     {
-        list($contest_id, $problem_char) = explode("-", $contestProblem);
-        $contest = Contest::findOrFail($contest_id);
-        $problem = $contest->getProblemByCharacter($problem_char);
-        $user = Auth::guard('sanctum')->user();
-        if ($request->my == 'true') {
-            return SubmissionResource::collection(Submission::query()->where('problem_id', $problem->id)->where('user_id', $user->id)->orderBy('id', 'desc')->paginate(100));
+        $parts = explode('-', $contestProblem, 2);
+        if (count($parts) < 2) {
+            abort(400, 'Invalid contest-problem syntax specification.');
         }
-        return SubmissionResource::collection(Submission::query()->where('problem_id', $problem->id)->orderBy('id', 'desc')->paginate(100));
+
+        [$contestId, $problemChar] = $parts;
+
+        $contest = Contest::findOrFail($contestId);
+        $problem = $contest->getProblemByCharacter($problemChar);
+
+        $query = Submission::query()
+            ->with(['user', 'problem'])
+            ->where('problem_id', $problem->id)
+            ->orderBy('id', 'desc');
+
+        if ($request->query('my') === 'true') {
+            $user = Auth::guard('sanctum')->user();
+            if ($user) {
+                $query->where('user_id', $user->id);
+            }
+        }
+
+        return SubmissionResource::collection($query->paginate(100));
     }
 
-    public function getById(Submission $submission, Request $request)
+    /**
+     * Fetch single submission layout with structural anti-cheat evaluation.
+     */
+    public function getById(Submission $submission): JsonResponse
     {
+        $submission->load(['user', 'problem.contest']);
         $contest = $submission->problem->contest;
-        $problems = Problem::where('contest_id', $contest->id)->orderBy('id', 'asc')->get();
-        $char = 'A';
-        foreach ($problems as $index => $problem) {
-            if ($problem->id == $submission->problem->id) {
-                $char = chr(ord('A') + $index);
-                break;
-            }
-        }
 
         $user = Auth::guard('sanctum')->user();
 
-        if ($contest->getStatus() != 'ended') {
-            if ($user && $submission->user_id == $user->id) {
-                $code = json_decode($submission->code);
-                $outputs = [];
-            } else {
-                $code = "";
-                $outputs = [];
-            }
-        } else {
-            $code = json_decode($submission->code);
-            $outputs = json_decode($submission->outputs);
-        }
-        return [
+        // Anti-cheat verification checks if contest has wrapped up or user is viewing their own work
+        $isContestEnded = $contest->getStatus() === 'ended';
+        $isOwner = $user && $submission->user_id === $user->id;
+        $canViewDetails = $isContestEnded || $isOwner;
+
+        return response()->json([
             'id' => $submission->id,
             'username' => $submission->user->name,
             'contest' => [
                 'id' => $contest->id,
                 'name' => $contest->name,
             ],
-            'problem_char' => $char,
+            'problem_char' => $submission->problem->char() ?? 'A',
             'language' => $submission->language,
-            'verdict' => $submission->verdict,
-            'time' => $submission->time() . ' ms',
-            'memory' => $submission->memory() . ' KB',
-            'sent_time' => $submission->created_at,
-            'code' => $code,
-            'outputs' => $outputs,
-        ];
+            'status' => $submission->status,
+            'time' => ($submission->time ?? 0) . ' ms',
+            'memory' => ($submission->memory ?? 0) . ' KB',
+            'sent_time' => $submission->created_at?->toIso8601String(),
+            'code' => json_decode($submission->code) ?? $submission->code,
+            'outputs' => $canViewDetails ? (json_decode($submission->outputs) ?? []) : [],
+        ]);
     }
 
-    public function store(Contest $contest, $char, SubmitProblemRequest $request)
+    /**
+     * Store and process a user source code transaction.
+     */
+    public function store(Contest $contest, string $char, SubmitProblemRequest $request): JsonResponse
     {
-        $validatedData = $request->validated();
+        $request->validated();
         $problem = $contest->getProblemByCharacter($char);
+        $userId = Auth::id();
 
-        $submission = $problem->submissions()->where('user_id', Auth::user()->id)->latest();
-        if ($submission->exists() && $submission->first()->created_at->diffInSeconds(Carbon::now()) < 30) {
-            return response()->json(['message' => '30 sekünden az aralykda tabşyryş edip bolmaz'], 422);
+        $lastSubmission = $problem->submissions()
+            ->where('user_id', $userId)
+            ->latest('id')
+            ->first(['created_at']);
+
+        if ($lastSubmission && $lastSubmission->created_at->diffInSeconds(now()) < 30) {
+            return response()->json(['message' => __('messages.submission_rate_limit')], 422);
         }
 
-        $file = $request->file('file');
-        $code = $request->input('code');
+        $codeContent = $request->input('code');
+        if (!$codeContent && $request->hasFile('file')) {
+            $codeContent = file_get_contents($request->file('file')->getRealPath());
+        }
+
         $languageWithVersion = $request->input('language');
-        list($language, $version) = explode("-", $languageWithVersion);
-        $languageKey = $language;
-        $language = config('languages.dockerLanguages')[$language];
+        [$languageKey, $version] = array_pad(explode('-', $languageWithVersion, 2), 2, '');
 
-        $codeContent = $code ? $code : file_get_contents($file->getRealPath());
-
-        // Create submission with Queued status
         $submission = Submission::create([
-            'user_id' => Auth::user()->id,
+            'user_id' => $userId,
             'problem_id' => $problem->id,
             'language' => $languageWithVersion,
             'code' => json_encode($codeContent),
             'status' => 'Queued',
         ]);
 
-        // Dispatch to judge-box via Redis queue
         GradeSubmissionJob::dispatch(
             $submission->id,
             $languageKey,
@@ -113,6 +132,6 @@ class SubmissionController extends Controller
             $problem->memory_limit ?? 256
         );
 
-        return response()->json(['message' => 'Iberilen kod tabşyryldy we gözegçilenýär']);
+        return response()->json(['message' => __('messages.submission_success')]);
     }
 }

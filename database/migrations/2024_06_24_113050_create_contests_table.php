@@ -13,15 +13,24 @@ return new class extends Migration
     {
         Schema::create('contests', function (Blueprint $table) {
             $table->id();
-            $table->foreignIdFor(\App\Models\ContestType::class, 'type_id')->default(1);
+
+            $table->foreignId('type_id')
+                ->default(1)
+                ->constrained('contest_types')
+                ->onDelete('restrict');
+
             $table->string('name');
-            $table->text('authorIds')->nullable();
             $table->timestamp('start_date');
-            $table->time('duration');
-            $table->longText('participantIds')->nullable();
-            $table->boolean('official')->default(0);
-            $table->boolean('active')->default(0);
+
+            $table->unsignedInteger('duration_minutes')->comment('Duration of the contest in minutes');
+
+            $table->boolean('official')->default(false);
+            $table->boolean('active')->default(false);
+
             $table->timestamps();
+
+            $table->index(['active', 'start_date']);
+            $table->index(['official', 'start_date']);
         });
     }
 

@@ -18,6 +18,7 @@ class UserSeeder extends Seeder
         $users = [
             [
                 'user_type' => 'admin',
+                'handle' => 'admin',
                 'name' => 'Admin',
                 'email' => env('ADMIN_EMAIL', 'admin@example.com'),
                 'email_verified_at' => now(),
