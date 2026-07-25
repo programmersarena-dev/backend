@@ -6,6 +6,7 @@ use App\Http\Resources\ContestDetailResource;
 use App\Http\Resources\ContestListResource;
 use App\Http\Resources\SubmissionResource;
 use App\Models\Contest;
+use App\Models\Problem;
 use App\Models\Submission;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -34,27 +35,48 @@ class ContestController extends Controller
 
     public function problems(Contest $contest): array
     {
-        $problems = [];
+        $problems = collect();
 
         if ($contest->getStatus() !== 'notStarted') {
+            $user = Auth::guard('sanctum')->user();
+
+            // 1. Fetch problems eager-loading translations and counting distinct accepted users
             $problems = $contest->problems()
-                ->select('id', 'name', 'contest_id')
+                ->with(['translations'])
+                ->withCount([
+                    'submissions as accepted_submissions_count' => function ($query) {
+                        $query->accepted()->select(DB::raw('count(distinct user_id)'));
+                    }
+                ])
                 ->orderBy('id', 'asc')
-                ->get()
-                ->map(function ($problem) {
-                    $problem->name = $problem->getTranslation('name');
-                    $problem->accepted_submissions_count = $problem->getAcceptedSubmissionsCountAttribute();
-                    $problem->accepted = $problem->solved();
-                    return $problem;
-                });
+                ->get();
+
+            // 2. Fetch all problem IDs solved by current user in 1 single query
+            $solvedProblemIds = ($user && $problems->isNotEmpty())
+                ? $user->submissions()
+                    ->whereIn('problem_id', $problems->pluck('id'))
+                    ->accepted()
+                    ->pluck('problem_id')
+                    ->unique()
+                    ->flip()
+                : collect();
+
+            // 3. Transform translated name and solved state in memory
+            $problems->transform(function ($problem) use ($solvedProblemIds) {
+                $problem->name = $problem->getTranslation('name');
+                $problem->accepted = $solvedProblemIds->has($problem->id);
+
+                return $problem;
+            });
         }
 
-        $firstProblem = $contest->problems()->first();
+        // 4. Resolve acceptable languages directly
+        $acceptableLanguages = (new Problem)->acceptableLanguages();
 
         return [
             'contest' => new ContestDetailResource($contest),
             'problems' => $problems,
-            'acceptableLanguages' => $firstProblem ? $firstProblem->acceptableLanguages() : [],
+            'acceptableLanguages' => $acceptableLanguages,
         ];
     }
 

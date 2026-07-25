@@ -39,6 +39,7 @@ composer install
 ```bash
 cp .env.example .env
 php artisan key:generate
+php artisan storage:link
 ```
 
 Edit `.env` with your database and judge settings:

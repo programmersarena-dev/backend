@@ -4,16 +4,22 @@ namespace App\Models;
 
 use App\Notifications\CustomResetPasswordNotification;
 use App\Notifications\VerifyEmail;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\HasApiTokens;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
     use HasApiTokens, HasFactory, Notifiable;
+
+    /**
+     * Standard accepted status flags for online judge submissions.
+     */
+    public const ACCEPTED_STATUSES = ['Accepted', '100', 'AC'];
 
     /**
      * The attributes that are mass assignable.
@@ -22,9 +28,10 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     protected $fillable = [
         'id',
-        'user_type',
+        'handle',
         'name',
         'email',
+        'user_type',
         'password',
         'locale',
         'last_activity',
@@ -47,45 +54,51 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'last_activity' => 'datetime',
         'password' => 'hashed',
     ];
 
-    public function sendEmailVerificationNotification()
+    public function sendEmailVerificationNotification(): void
     {
-        if ($this->email_verified_at)
+        if ($this->email_verified_at) {
             return;
-        return $this->notify(new VerifyEmail());
+        }
+        $this->notify(new VerifyEmail());
     }
 
-    public function sendPasswordResetNotification($token)
+    public function sendPasswordResetNotification($token): void
     {
         $this->notify(new CustomResetPasswordNotification($token));
     }
 
-    public function profile()
+    public function profile(): HasOne
     {
         return $this->hasOne(Profile::class);
     }
 
-    public function submissions()
+    public function submissions(): HasMany
     {
         return $this->hasMany(Submission::class);
     }
 
-    public function rating()
+    public function rating(): HasOne
     {
         return $this->hasOne(Rating::class);
     }
 
-    public function getAcceptedProblemsCountAttribute()
+    /**
+     * Accessor for accepted problems count.
+     * Uses 'status' (not 'verdict') to match PostgreSQL schema.
+     */
+    public function getAcceptedProblemsCountAttribute(): int
     {
-        return $this->submissions()
-            ->where(function ($query) {
-                $query->where('verdict', 'Accepted')
-                      ->orWhere('verdict', '100');
-            })
-            ->select('problem_id')
-            ->distinct()
+        if (array_key_exists('accepted_problems_count', $this->attributes)) {
+            return (int) $this->attributes['accepted_problems_count'];
+        }
+
+        return $this->attributes['accepted_problems_count'] ??= $this->submissions()
+            ->whereIn('status', self::ACCEPTED_STATUSES)
+            ->distinct('problem_id')
             ->count('problem_id');
     }
 }

@@ -4,8 +4,6 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use App\Models\Contest;
-use App\Models\Standing;
 
 class UserResource extends JsonResource
 {
@@ -15,16 +13,18 @@ class UserResource extends JsonResource
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
-    {        
+    {
         return [
-            'name' => $this->name,
-            'image' => $this->profile->image ? asset('storage/' . $this->profile->image) : '',
-            'firstName' => $this->profile->first_name,
-            'lastName' => $this->profile->last_name,
-            'country' => $this->profile->country ? $this->profile->country->name : '',
-            'is_online' => $this->last_activity >= now()->subMinutes(5) ? 1 : 0,
-            'acceptedProblemsCount' => $this->accepted_problems_count,
-            'current_rating' => $this->rating ? $this->rating->current_rating : 0,
+            'id'                     => $this->id,
+            'handle'                 => $this->handle,
+            'name'                   => $this->name,
+            'image'                  => $this->profile?->image ? asset('storage/' . $this->profile->image) : '',
+            'firstName'              => $this->profile?->first_name ?? '',
+            'lastName'               => $this->profile?->last_name ?? '',
+            'country'                => $this->profile?->country?->name ?? '',
+            'is_online'              => $this->last_activity && $this->last_activity->gte(now()->subMinutes(5)) ? 1 : 0,
+            'acceptedProblemsCount'  => $this->accepted_problems_count,
+            'current_rating'         => $this->rating?->current_rating ?? 0,
         ];
     }
 }

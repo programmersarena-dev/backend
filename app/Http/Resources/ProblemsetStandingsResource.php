@@ -15,8 +15,12 @@ class ProblemsetStandingsResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
+            'id' => $this->id,
             'name' => $this->name,
-            'accepted_problems_count' => $this->accepted_problems_count,
+            'username' => $this->username ?? $this->name,
+            'accepted_problems_count' => (int) ($this->accepted_problems_count ?? 0),
+            'avatar' => $this->avatar ?? null,
+            'country_code' => $this->country_code ?? null,
         ];
     }
 }

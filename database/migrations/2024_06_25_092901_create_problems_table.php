@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Contest;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -13,18 +14,35 @@ return new class extends Migration
     {
         Schema::create('problems', function (Blueprint $table) {
             $table->id();
-            $table->foreignIdFor(\App\Models\Contest::class, 'contest_id');
+
+            $table->foreignIdFor(Contest::class, 'contest_id')
+                  ->nullable()
+                  ->constrained()
+                  ->nullOnDelete();
+
+            $table->string('code', 32)->nullable()->unique();
+            $table->string('slug')->unique();
             $table->string('name');
-            $table->text('tags')->nullable();
-            $table->integer('time_limit');
-            $table->integer('memory_limit');
-            $table->integer('score')->nullable();
-            $table->longText('description')->nullable();
+
+            $table->unsignedSmallInteger('time_limit')->default(1000)->comment('In milliseconds');
+            $table->unsignedSmallInteger('memory_limit')->default(256)->comment('In megabytes');
+
+            $table->unsignedSmallInteger('difficulty')->nullable()->index();
+            $table->unsignedSmallInteger('score')->default(100);
+
+            $table->json('tags')->nullable();
+
+            $table->text('description')->nullable();
             $table->text('input')->nullable();
             $table->text('output')->nullable();
-            $table->string('test_cases');
             $table->text('note')->nullable();
+
+            $table->string('test_cases_path')->nullable();
+
+            $table->boolean('is_public')->default(false)->index();
+
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

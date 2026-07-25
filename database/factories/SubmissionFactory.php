@@ -23,8 +23,7 @@ class SubmissionFactory extends Factory
             'Wrong Answer',
             'Time Limit Exceeded',
             'Runtime Error',
-            'Compilation Error',
-            'Queued'
+            'Compilation Error'
         ]);
 
         return [

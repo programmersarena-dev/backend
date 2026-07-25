@@ -19,8 +19,8 @@ class SubmissionResource extends JsonResource
             'language' => $this->language,
             'status' => $this->status,
 
-            'time' => $this->time ?? 0,
-            'memory' => $this->memory ?? 0,
+            'time' => ($this->time ?? 0) . ' ms',
+            'memory' => ($this->memory ?? 0) . ' KB',
 
             'created_at' => $this->created_at?->toIso8601String(),
 

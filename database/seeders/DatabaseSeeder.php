@@ -32,7 +32,7 @@ class DatabaseSeeder extends Seeder
 
                 \App\Models\Problem::factory(rand(4, 6))->create([
                     'contest_id' => $contest->id,
-                    'test_cases' => $testCasesPath
+                    'test_cases_path' => $testCasesPath
                 ]);
 
                 \App\Models\Standing::factory()->create([

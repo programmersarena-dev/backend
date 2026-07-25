@@ -21,6 +21,6 @@ class ProblemTranslation extends Model
 
     public function problem()
     {
-        return $this->belongsTo(Problem::class,'id','problem_id');
+        return $this->belongsTo(Problem::class);
     }
 }

@@ -16,13 +16,18 @@ class ProblemListResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $isContestEnded = $this->isContestEnded();
+
         return [
-            'contest_id' => $this->contest->id,
+            'contest_id' => $this->contest_id ?? $this->contest?->id,
             'char' => $this->char(),
-            'name' => $this->getTranslation("name"),
-            'tags' => $this->contest->getStatus() == 'ended' ? json_decode($this->tags) : [],
+            'name' => $this->getTranslation('name'),
+
+            'tags' => $isContestEnded ? (is_string($this->tags) ? json_decode($this->tags, true) : ($this->tags ?? [])) : [],
             'difficulty' => $this->score,
-            'solved' => $this->solved(),
+
+            'solved' => $this->is_solved ?? $this->isSolvedBy(),
+
             'accepted_submissions' => $this->accepted_submissions_count,
         ];
     }

@@ -4,120 +4,195 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 class Problem extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'id',
         'contest_id',
+        'code',
+        'slug',
         'name',
         'tags',
         'time_limit',
         'memory_limit',
+        'difficulty',
         'score',
         'description',
         'input',
         'output',
-        'test_cases',
+        'test_cases_path',
         'note',
+        'is_public',
     ];
 
-    public function getTranslation($field = '', $language = false)
-    {
-        $language = $language == false ? app()->getLocale() : $language;
-        $translations = $this->translations->where('language', $language)->first();
-        return $translations != null ? $translations->$field : $this->$field;
-    }
+    /**
+     * Automatic type casting for attributes.
+     */
+    protected $casts = [
+        'tags' => 'array',
+        'time_limit' => 'integer',
+        'memory_limit' => 'integer',
+        'score' => 'integer',
+        'difficulty' => 'integer',
+        'is_public' => 'boolean',
+    ];
 
-    public function translations()
-    {
-        return $this->hasMany(ProblemTranslation::class, 'problem_id', 'id');
-    }
+    /* -------------------------------------------------------------------------- */
+    /* RELATIONSHIPS                                                              */
+    /* -------------------------------------------------------------------------- */
 
-    public function char()
-    {
-        $problems = Problem::where('contest_id', $this->contest_id)->orderBy('id', 'asc')->get();
-        foreach ($problems as $index => $problem) {
-            if ($problem->id == $this->id) {
-                return chr(ord('A') + $index);
-            }
-        }
-        return 0;
-    }
-
-    public function contest()
+    public function contest(): BelongsTo
     {
         return $this->belongsTo(Contest::class);
     }
 
-    public function submissions()
+    public function translations(): HasMany
     {
-        return $this->hasMany(Submission::class, 'problem_id', 'id');
+        return $this->hasMany(ProblemTranslation::class);
     }
 
-    public function acceptableLanguages()
+    public function submissions(): HasMany
     {
-        $languagesWithExtension = [];
-        foreach (config('languages.dockerLanguages') as $language => $details) {
-            foreach ($details['versions'] as $version) {
-                $languagesWithExtension[] = $language . '-' . $version;
+        return $this->hasMany(Submission::class);
+    }
+
+    /* -------------------------------------------------------------------------- */
+    /* HELPER & OPTIMIZED METHODS                                                 */
+    /* -------------------------------------------------------------------------- */
+
+    /**
+     * Get field translation with fallback to default problem attribute.
+     * Uses loaded relation if available to avoid firing extra SQL queries.
+     */
+    public function getTranslation(string $field = 'name', ?string $language = null): mixed
+    {
+        $language = $language ?? app()->getLocale();
+
+        // If relation is eager-loaded, search in collection; otherwise execute query
+        $translation = $this->relationLoaded('translations')
+            ? $this->translations->firstWhere('language', $language)
+            : $this->translations()->where('language', $language)->first();
+
+        return $translation?->{$field} ?? $this->{$field};
+    }
+
+    /**
+     * Calculate problem letter identifier ('A', 'B', 'C'...) inside a contest.
+     */
+    public function char(): string
+    {
+        if (!$this->contest_id) {
+            return $this->code ?? (string) $this->id;
+        }
+
+        // Count how many problems exist in this contest with a lower ID
+        $index = static::where('contest_id', $this->contest_id)
+            ->where('id', '<', $this->id)
+            ->count();
+
+        return chr(ord('A') + $index);
+    }
+
+    /**
+     * Return acceptable language versions defined in system config.
+     */
+    public function acceptableLanguages(): array
+    {
+        $languages = [];
+        $dockerLanguages = config('languages.dockerLanguages', []);
+
+        foreach ($dockerLanguages as $language => $details) {
+            foreach ($details['versions'] ?? [] as $version) {
+                $languages[] = "{$language}-{$version}";
             }
         }
-        return $languagesWithExtension;
+
+        return $languages;
     }
 
-    public function solved($user = null)
+    /**
+     * Check whether the contest associated with this problem has ended.
+     */
+    public function isContestEnded(): bool
     {
-        if (!$user) $user = Auth::guard('sanctum')->user();
-        if (!$user) return 0;
+        if (!$this->contest_id) {
+            return true; // Non-contest / public archive problems
+        }
 
-        $exists = $this->submissions()
-            ->where('user_id', $user->id)
-            ->where(function ($submission) {
-                $submission->where('verdict', 'Accepted')
-                    ->orWhere('verdict', '100');
-            })
-            ->exists();
-        return $exists;
+        $contest = $this->relationLoaded('contest')
+            ? $this->contest
+            : $this->contest()->first();
+
+        return $contest ? $contest->getStatus() === 'ended' : false;
     }
 
-    public function getAcceptedSubmissionsCountAttribute()
+    /**
+     * Check if a specific user (or authenticated user) has solved this problem.
+     * Updated: fixed column from 'verdict' to 'status'.
+     */
+    public function isSolvedBy($user = null): bool
     {
+        $user = $user ?? Auth::guard('sanctum')->user();
+
+        if (!$user) {
+            return false;
+        }
+
         return $this->submissions()
-            ->where('verdict', 'Accepted')
-            ->orWhere('verdict', '100')
-            ->select('user_id')
-            ->distinct()
-            ->count('user_id');
+            ->where('user_id', $user->id)
+            ->whereIn('status', Submission::ACCEPTED_STATUSES ?? ['Accepted', '100'])
+            ->exists();
     }
 
-    public function downloadAttachments()
+    /* -------------------------------------------------------------------------- */
+    /* ACCESSORS                                                                  */
+    /* -------------------------------------------------------------------------- */
+
+    /**
+     * Accessor for unique solved user count.
+     * Updated: fixed column from 'verdict' to 'status'.
+     */
+    public function getAcceptedProblemsCountAttribute(): int
     {
-        $attachmentFolder = 'public/' . $this->test_cases . '/attachments';
-
-        try {
-            $files = Storage::disk('local')->files($attachmentFolder);
-
-            if (empty($files)) {
-                return response()->json(['message' => 'Goşundy tapylmady'], 404);
-            }
-
-            $filePath = $files[0];
-            $filename = basename($filePath);
-
-            $absolutePath = storage_path('app/' . $filePath);
-
-            if (!file_exists($absolutePath)) {
-                return response()->json(['message' => 'Faýl tapylmady'], 404);
-            }
-
-            return response()->download($absolutePath, $filename);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Goşundyny ýüklemekde ýalňyşlyk ýüze çykdy'], 500);
+        if (array_key_exists('accepted_problems_count', $this->attributes)) {
+            return (int) $this->attributes['accepted_problems_count'];
         }
+
+        return $this->attributes['accepted_problems_count'] = $this->submissions()
+            ->whereIn('status', ['Accepted', '100'])
+            ->distinct('problem_id')
+            ->count('problem_id');
+    }
+
+    /* -------------------------------------------------------------------------- */
+    /* FILE UTILITIES                                                             */
+    /* -------------------------------------------------------------------------- */
+
+    /**
+     * Resolves absolute file path for downloading problem attachments.
+     */
+    public function getAttachmentPath(): ?string
+    {
+        if (!$this->test_cases_path) {
+            return null;
+        }
+
+        $folder = "public/{$this->test_cases_path}/attachments";
+        $files = Storage::disk('local')->files($folder);
+
+        if (empty($files)) {
+            return null;
+        }
+
+        $relativePath = $files[0];
+        $fullPath = storage_path("app/{$relativePath}");
+
+        return file_exists($fullPath) ? $fullPath : null;
     }
 }
