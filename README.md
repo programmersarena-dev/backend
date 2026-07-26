@@ -76,24 +76,107 @@ php artisan route:cache
 
 ## Running
 
-### Development Server
+### Development Server (without Docker)
 
 ```bash
 php artisan serve --port 8000
 ```
 
-### With Docker Compose
+### Running with Docker
+
+The backend ships with two Docker approaches:
+
+> **Important:** Inside Docker containers, services communicate via container names (e.g., `db`, `redis`), not `localhost`. The `docker-compose.yml` automatically overrides the `.env` values for `DB_HOST`, `DB_PORT`, `REDIS_HOST`, `REDIS_PORT`, and `JUDGE_REDIS_URL` to point to the correct Docker service names. Your `.env` file stays untouched for local non-Docker development.
+
+---
+
+#### 1. Docker Compose (Recommended for most setups)
+
+Starts the full stack — Laravel API, queue workers, judge consumer, PostgreSQL, and Redis — in one command:
 
 ```bash
-docker-compose up --build
+# Build and start all services
+docker-compose up --build -d
+
+# View logs
+docker-compose logs -f
+
+# Stop all services
+docker-compose down
 ```
 
-This starts:
-- **Laravel API**: http://localhost:8000
-- **PostgreSQL**: localhost:5432
-- **Redis**: localhost:6379
+Services started automatically:
 
-### Queue Workers
+| Service          | Container Name          | URL                          |
+|------------------|-------------------------|------------------------------|
+| Laravel API      | `laravel-app`           | http://localhost:8000        |
+| Queue Worker     | `laravel-queue-worker`  | —                            |
+| Judge Consumer   | `judge-result-consumer` | —                            |
+| PostgreSQL       | `postgres-db`           | localhost:5432               |
+| Redis            | `laravel-redis`         | localhost:6379               |
+
+**Best for:** Development teams, CI/CD, one-command local setup, production deployments.
+
+---
+
+#### 2. Docker Entrypoint (Manual container control)
+
+Run individual containers directly with the entrypoint script that prepares the environment (creates runtime dirs, sets permissions):
+
+```bash
+# Build the image first
+docker build -t laravel-app .
+
+# Run Laravel API
+docker run --rm -p 8000:80 \
+    --env-file .env \
+    --name laravel-app \
+    -v "$(pwd):/var/www/html" \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v vendor_vol:/var/www/html/vendor \
+    laravel-app
+
+# Run queue worker
+docker run --rm \
+    --env-file .env \
+    --name laravel-queue-worker \
+    -v "$(pwd):/var/www/html" \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v vendor_vol:/var/www/html/vendor \
+    laravel-app \
+    sh -c "php /var/www/html/artisan queue:work redis --sleep=3 --tries=3"
+
+# Run judge consumer
+docker run --rm \
+    --env-file .env \
+    --name judge-result-consumer \
+    -v "$(pwd):/var/www/html" \
+    -v vendor_vol:/var/www/html/vendor \
+    laravel-app \
+    sh -c "php /var/www/html/artisan judge:worker"
+```
+
+> **Note:** The `docker-entrypoint.sh` script runs automatically before the container's main command. It creates runtime directories (`/tmp/run/php`, `/tmp/nginx-logs`), sets www-data ownership, and ensures storage/bootstrap/cache are writable.
+
+**Best for:** Debugging, learning the container internals, custom service orchestration, integrating with external tools.
+
+---
+
+### Which approach is better?
+
+| Scenario                         | Recommendation         | Reason                                                      |
+|----------------------------------|------------------------|-------------------------------------------------------------|
+| **Local development**            | ✅ **Docker Compose**  | One command starts everything; services are pre-configured  |
+| **Production deployment**        | ✅ **Docker Compose**  | Declarative, reproducible, easy to scale                    |
+| **Learning how the image works** | 🐳 **Docker Entrypoint** | See each step; understand the entrypoint script behavior    |
+| **Custom orchestration**         | 🐳 **Docker Entrypoint** | Full control over mounts, networks, and container lifecycle |
+| **CI/CD pipelines**              | ✅ **Docker Compose**  | Consistent environment across runners, easy teardown        |
+
+**TL;DR:** Use **Docker Compose** unless you have a specific reason to run containers manually.
+
+---
+
+### Queue Workers (manual, without Docker)
 
 In separate terminals:
 
@@ -105,7 +188,7 @@ php artisan queue:work redis --sleep=3 --tries=3
 php artisan judge:worker
 ```
 
-Or with Docker Compose (automatically started).
+> **Note:** When using Docker Compose, queue workers start automatically.
 
 ## Database
 

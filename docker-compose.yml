@@ -42,6 +42,12 @@ services:
         container_name: laravel-app
         env_file:
             - .env
+        environment:
+            DB_HOST: db
+            DB_PORT: "5432"
+            REDIS_HOST: redis
+            REDIS_PORT: "6379"
+            JUDGE_REDIS_URL: redis://redis:6379/0
         entrypoint:
             - /usr/local/bin/docker-entrypoint.sh
         volumes:
@@ -52,13 +58,15 @@ services:
             - /var/run/docker.sock:/var/run/docker.sock
         ports:
             - "8000:80"
+        tmpfs:
+            - /tmp:size=128M
         networks:
             - app-network
         depends_on:
             - db
             - redis
         restart: unless-stopped
-        command: sh -c "php-fpm --fpm-config /usr/local/etc/php-fpm.conf --daemonize && nginx -g 'daemon off;'"
+        command: sh -c "php /var/www/html/artisan migrate --force && php /var/www/html/artisan db:seed --class=CountrySeeder --force && php-fpm --fpm-config /usr/local/etc/php-fpm.conf --daemonize && nginx -g 'daemon off;'"
 
     queue-worker:
         build:
@@ -67,6 +75,12 @@ services:
         container_name: laravel-queue-worker
         env_file:
             - .env
+        environment:
+            DB_HOST: db
+            DB_PORT: "5432"
+            REDIS_HOST: redis
+            REDIS_PORT: "6379"
+            JUDGE_REDIS_URL: redis://redis:6379/0
         entrypoint:
             - /usr/local/bin/docker-entrypoint.sh
         volumes:
@@ -75,6 +89,8 @@ services:
             - storage:/var/www/html/storage
             - bootstrap_cache:/var/www/html/bootstrap/cache
             - /var/run/docker.sock:/var/run/docker.sock
+        tmpfs:
+            - /tmp:size=64M
         networks:
             - app-network
         depends_on:
@@ -90,6 +106,12 @@ services:
         container_name: judge-result-consumer
         env_file:
             - .env
+        environment:
+            DB_HOST: db
+            DB_PORT: "5432"
+            REDIS_HOST: redis
+            REDIS_PORT: "6379"
+            JUDGE_REDIS_URL: redis://redis:6379/0
         entrypoint:
             - /usr/local/bin/docker-entrypoint.sh
         volumes:
@@ -97,6 +119,8 @@ services:
             - vendor:/var/www/html/vendor
             - storage:/var/www/html/storage
             - bootstrap_cache:/var/www/html/bootstrap/cache
+        tmpfs:
+            - /tmp:size=64M
         networks:
             - app-network
         depends_on:
