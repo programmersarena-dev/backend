@@ -39,6 +39,8 @@ class AuthController extends Controller
 
             Profile::create([
                 'user_id' => $user->id,
+                'first_name' => $data['first_name'],
+                'last_name' => $data['last_name'],
                 'country_id' => $data['country_id'],
             ]);
 
