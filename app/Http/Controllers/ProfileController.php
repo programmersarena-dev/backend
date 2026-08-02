@@ -43,11 +43,11 @@ class ProfileController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show($username)
+    public function show($handle)
     {
         return new UserResource(
             User::query()
-                ->where('name', $username)
+                ->where('handle', $handle)
                 ->firstOrFail()
         );
     }
@@ -55,9 +55,9 @@ class ProfileController extends Controller
     /**
      * Show the form for editing the specified resource.
      */
-    public function edit($username, Request $request)
+    public function edit($handle, Request $request)
     {
-        if ($username != $request->user()->name) {
+        if ($handle != $request->user()->handle) {
             return response('', 404);
         }
         $user = $request->user();
@@ -114,9 +114,9 @@ class ProfileController extends Controller
         //
     }
 
-    public function ratings($username)
+    public function ratings($handle)
     {
-        $user = User::where('name', $username)->firstOrFail();
+        $user = User::where('handle', $handle)->firstOrFail();
         $contest_ratings = [];
         $new_rating = 0;
         if ($user->rating) {
@@ -151,9 +151,9 @@ class ProfileController extends Controller
         ];
     }
 
-    public function submissions($username)
+    public function submissions($handle)
     {
-        $submissions = User::query()->where('name', $username)->firstOrFail()->submissions();
+        $submissions = User::query()->where('handle', $handle)->firstOrFail()->submissions();
         return SubmissionResource::collection($submissions->orderBy('id', 'desc')->paginate(100));
     }
 }

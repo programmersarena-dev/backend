@@ -23,47 +23,39 @@ class DashboardController extends Controller
         $startDate = $now->copy()->subMonths(11)->startOfMonth();
 
         $users = User::selectRaw("
-            YEAR(created_at) as year,
-            MONTH(created_at) as month,
+            TO_CHAR(created_at, 'YYYY-MM') as year_month,
             COUNT(*) as total
-            ")
-            ->where('created_at', '>=', $startDate->format('Y-m-d'))
-            ->groupBy('year', 'month')
-            ->orderBy('year')
-            ->orderBy('month')
+        ")
+            ->where('created_at', '>=', $startDate->startOfMonth())
+            ->groupBy('year_month')
+            ->orderBy('year_month', 'asc')
             ->get();
 
         $contests = Contest::selectRaw("
-            YEAR(start_date) as year,
-            MONTH(start_date) as month,
-            COUNT(*) as total
-            ")
-            ->where('start_date', '>=', $startDate->format('Y-m-d'))
-            ->groupBy('year', 'month')
-            ->orderBy('year')
-            ->orderBy('month')
+                TO_CHAR(created_at, 'YYYY-MM') as year_month,
+                COUNT(*) as total
+        ")
+            ->where('start_date', '>=', $startDate->startOfMonth())
+            ->groupBy('year_month')
+            ->orderBy('year_month', 'asc')
             ->get();
 
         $problems = Problem::selectRaw("
-            YEAR(created_at) as year,
-            MONTH(created_at) as month,
-            COUNT(*) as total
+                TO_CHAR(created_at, 'YYYY-MM') as year_month,
+                COUNT(*) as total
             ")
-            ->where('created_at', '>=', $startDate->format('Y-m-d'))
-            ->groupBy('year', 'month')
-            ->orderBy('year')
-            ->orderBy('month')
+            ->where('created_at', '>=', $startDate->startOfMonth())
+            ->groupBy('year_month')
+            ->orderBy('year_month', 'asc')
             ->get();
 
         $submissions = Submission::selectRaw("
-            YEAR(created_at) as year,
-            MONTH(created_at) as month,
-            COUNT(*) as total
+                TO_CHAR(created_at, 'YYYY-MM') as year_month,
+                COUNT(*) as total
             ")
-            ->where('created_at', '>=', $startDate->format('Y-m-d'))
-            ->groupBy('year', 'month')
-            ->orderBy('year')
-            ->orderBy('month')
+            ->where('created_at', '>=', $startDate->startOfMonth())
+            ->groupBy('year_month')
+            ->orderBy('year_month', 'asc')
             ->get();
 
         return [
