@@ -13,9 +13,9 @@ return new class extends Migration
     {
         Schema::create('ratings', function (Blueprint $table) {
             $table->id();
-            $table->foreignIdFor(\App\Models\User::class, 'user_id');
-            $table->integer('current_rating');
-            $table->longText('contest_ratings');
+            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
+            $table->integer('current_rating')->index();
+            $table->jsonb('contest_ratings');
             $table->timestamps();
         });
     }

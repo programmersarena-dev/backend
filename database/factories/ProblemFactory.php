@@ -30,7 +30,7 @@ class ProblemFactory extends Factory
 
         return [
             'contest_id' => Contest::factory(),
-            'code' => strtoupper(fake()->bothify('???-###')),
+            'code' => strtoupper(fake()->unique()->bothify('???-###')),
             'slug' => Str::slug($name),
             'name' => ucfirst($name),
 
@@ -49,7 +49,7 @@ class ProblemFactory extends Factory
             'output' => fake()->paragraph(),
             'note' => fake()->boolean(40) ? fake()->sentence() : null,
 
-            'test_cases_path' => 'problems/test_' . fake()->uuid(),
+            'test_cases_path' => 'test_cases/sample',
             'is_public' => true,
         ];
     }

@@ -1,62 +1,62 @@
 #!/bin/sh
 set -eu
 
-echo "--- docker-entrypoint.sh: preparing environment ---"
-
-# Create required runtime directories (bind-mounted volumes may not exist yet)
-mkdir -p /tmp/run/php /tmp/nginx-logs \
-    /var/www/html/storage \
-    /var/www/html/storage/logs \
-    /var/www/html/bootstrap/cache
-
-echo "Runtime directories created"
-
-# Fix ownership for writable runtime directories only (not the entire project)
-chown www-data:www-data \
-    /tmp/run /tmp/run/php \
-    /tmp/nginx-logs
-
-echo "Runtime permissions set for www-data"
-
-# Ensure storage and cache are writable
-chmod -R 0777 /var/www/html/storage /var/www/html/bootstrap/cache
-
-echo "Storage and cache directories are writable"
-
-# Clear stale bootstrap cache to avoid referencing dev-only packages (e.g., Collision)
-rm -f /var/www/html/bootstrap/cache/packages.php /var/www/html/bootstrap/cache/services.php
-echo "Stale bootstrap cache cleared"
-
-# Wait for database to be ready
-db_ready() {
-    php /var/www/html/artisan db:show --quiet 2>/dev/null
+log() {
+    printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1"
 }
 
-echo "Waiting for database connection..."
-for i in $(seq 1 30); do
-    if db_ready; then
-        echo "Database connection established"
+log "Preparing environment"
+
+# Runtime directories (named volumes can be empty on first boot)
+mkdir -p /tmp/run/php /tmp/nginx-logs \
+    /var/www/html/storage/logs \
+    /var/www/html/storage/framework/cache \
+    /var/www/html/storage/framework/sessions \
+    /var/www/html/storage/framework/views \
+    /var/www/html/bootstrap/cache
+
+chown -R www-data:www-data \
+    /tmp/run /tmp/nginx-logs \
+    /var/www/html/storage \
+    /var/www/html/bootstrap/cache
+
+# Directories need +x to be traversable, files don't. 0775/0664 (not 0777)
+# keeps things group-writable for www-data without going world-writable.
+find /var/www/html/storage /var/www/html/bootstrap/cache -type d -exec chmod 0775 {} +
+find /var/www/html/storage /var/www/html/bootstrap/cache -type f -exec chmod 0664 {} +
+
+log "Runtime directories ready"
+
+# Stale bootstrap cache can reference dev-only packages (e.g. Collision)
+# from a different composer install, or - worse - freeze config values
+# (like DB_HOST) from a run outside this container, ignoring env vars
+# entirely. Safe to drop: Laravel rebuilds all of these on demand.
+rm -f /var/www/html/bootstrap/cache/packages.php \
+      /var/www/html/bootstrap/cache/services.php \
+      /var/www/html/bootstrap/cache/config.php \
+      /var/www/html/bootstrap/cache/routes-v7.php \
+      /var/www/html/bootstrap/cache/events.php
+
+# Wait for the database. Every service (app, queue-worker, judge-consumer)
+# uses this entrypoint, so this is a shared readiness gate for all of them.
+db_ready() {
+    php /var/www/html/artisan db:show --quiet >/dev/null 2>&1
+}
+
+log "Waiting for database connection..."
+attempt=0
+until db_ready; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 30 ]; then
+        log "WARNING: database not reachable after 60s, proceeding anyway"
         break
     fi
-    echo "Attempt $i: Database not ready yet, waiting..."
+    log "Attempt $attempt: database not ready yet, waiting..."
     sleep 2
 done
-
-if ! db_ready; then
-    echo "WARNING: Database connection could not be confirmed after 60 seconds."
-    echo "Attempting to proceed anyway..."
+if [ "$attempt" -lt 30 ]; then
+    log "Database connection established"
 fi
 
-# Run database migrations
-echo "Running database migrations..."
-php /var/www/html/artisan migrate --force
-echo "Migrations completed"
-
-# Seed countries if the table is empty
-echo "Seeding countries..."
-php /var/www/html/artisan db:seed --force
-echo "Countries seeding completed"
-
-# Execute the main container command (from CMD in Dockerfile)
-echo "Starting application: $@"
+log "Starting: $*"
 exec "$@"

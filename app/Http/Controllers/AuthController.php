@@ -13,22 +13,19 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Symfony\Component\HttpFoundation\Cookie;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
-    // Token Lifetime Constants
     private const ACCESS_TOKEN_EXPIRY_MINUTES = 15;
     private const REFRESH_TOKEN_EXPIRY_MINUTES = 14400; // 10 Days
     private const REFRESH_COOKIE_NAME = 'refresh_token';
 
-    /**
-     * Register a new user and return structural access metrics.
-     */
-    public function signup(SignUpRequest $request)
+    public function signup(SignUpRequest $request): JsonResponse
     {
         $data = $request->validated();
 
-        $result = DB::transaction(function () use ($data) {
+        $user = DB::transaction(function () use ($data) {
             /** @var User $user */
             $user = User::create([
                 'handle' => $data['handle'],
@@ -49,26 +46,20 @@ class AuthController extends Controller
             return $user;
         });
 
-        // Issue tokens directly upon successful sign-up
-        [$accessToken, $cookie] = $this->issueTokens($result);
+        [$accessToken, $cookie] = $this->issueTokens($user);
 
         return response()->json([
-            'message' => __('messages.signup_success'), // Dynamic Localization
-            'user' => $result,
-            'token' => $accessToken
+            'message' => __('messages.signup_success'),
+            'user' => $user,
+            'token' => $accessToken,
         ], 201)->withCookie($cookie);
     }
 
-    /**
-     * Authenticate user, evaluate active device concurrency constraints,
-     * and attach stateful HttpOnly refresh keys.
-     */
-    public function login(LoginRequest $request)
+    public function login(LoginRequest $request): JsonResponse
     {
         $data = $request->validated();
 
         $loginField = filter_var($data['login'], FILTER_VALIDATE_EMAIL) ? 'email' : 'handle';
-
         $user = User::where($loginField, $data['login'])->first();
 
         if (!$user || !Hash::check($data['password'], $user->password)) {
@@ -77,7 +68,6 @@ class AuthController extends Controller
 
         if ($user->last_activity) {
             $lastActivity = Carbon::parse($user->last_activity)->addMinutes(10);
-
             if ($lastActivity->isFuture()) {
                 $user->tokens()->delete();
             }
@@ -90,24 +80,16 @@ class AuthController extends Controller
         return response()->json([
             'message' => __('messages.login_success'),
             'user' => $user,
-            'token' => $accessToken
+            'token' => $accessToken,
         ])->withCookie($cookie);
     }
 
-    /**
-     * Mark the authenticated user's email address as verified.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  string|int  $id
-     * @param  string  $hash
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function verify(Request $request, $id, $hash): JsonResponse
     {
         if (!$request->hasValidSignature()) {
             return response()->json([
                 'status' => 'error',
-                'message' => __('messages.email_invalid_signature', [], 'tk')
+                'message' => __('messages.email_invalid_signature', [], 'tk'),
             ], 403);
         }
 
@@ -116,14 +98,14 @@ class AuthController extends Controller
         if (!hash_equals((string) $hash, sha1($user->getEmailForVerification()))) {
             return response()->json([
                 'status' => 'error',
-                'message' => __('messages.email_invalid_hash', [], 'tk')
+                'message' => __('messages.email_invalid_hash', [], 'tk'),
             ], 403);
         }
 
         if ($user->hasVerifiedEmail()) {
             return response()->json([
                 'status' => 'success',
-                'message' => __('messages.email_already_verified', [], 'tk')
+                'message' => __('messages.email_already_verified', [], 'tk'),
             ], 200);
         }
 
@@ -133,14 +115,11 @@ class AuthController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => __('messages.email_verified_success', [], 'tk')
+            'message' => __('messages.email_verified_success', [], 'tk'),
         ], 200);
     }
 
-    /**
-     * Parse incoming safe cookie payloads to issue regenerated token rotations.
-     */
-    public function refresh(Request $request)
+    public function refresh(Request $request): JsonResponse
     {
         $refreshToken = $request->cookie(self::REFRESH_COOKIE_NAME);
 
@@ -148,8 +127,7 @@ class AuthController extends Controller
             return response()->json(['message' => __('messages.unauthorized')], 401);
         }
 
-        // Parse and validate the token from Sanctum's personal access token store
-        $tokenModel = \Laravel\Sanctum\PersonalAccessToken::findToken($refreshToken);
+        $tokenModel = PersonalAccessToken::findToken($refreshToken);
 
         if (!$tokenModel || $tokenModel->expires_at?->isPast()) {
             return response()->json(['message' => __('messages.unauthorized')], 401);
@@ -158,20 +136,16 @@ class AuthController extends Controller
         /** @var User $user */
         $user = $tokenModel->tokenable;
 
-        // Clean up both the old single-use access and old refresh strings to prevent creep
         $tokenModel->delete();
 
         [$newAccessToken, $newCookie] = $this->issueTokens($user);
 
         return response()->json([
-            'token' => $newAccessToken
+            'token' => $newAccessToken,
         ])->withCookie($newCookie);
     }
 
-    /**
-     * Terminate the API Bearer sessions and explicitly clear stateful HttpOnly cookies.
-     */
-    public function logout(Request $request)
+    public function logout(Request $request): JsonResponse
     {
         /** @var User $user */
         $user = Auth::user();
@@ -183,9 +157,8 @@ class AuthController extends Controller
                 $user->tokens()->where('id', $currentAccessToken->id)->delete();
             }
 
-            // Remove long-lived refresh references explicitly from the database
             if ($refreshToken = $request->cookie(self::REFRESH_COOKIE_NAME)) {
-                if ($tokenModel = \Laravel\Sanctum\PersonalAccessToken::findToken($refreshToken)) {
+                if ($tokenModel = PersonalAccessToken::findToken($refreshToken)) {
                     $tokenModel->delete();
                 }
             }
@@ -200,29 +173,26 @@ class AuthController extends Controller
             }
         }
 
-        // Clear the cookie inside the client browser by forcing instant expiration
         $forgetCookie = cookie()->forget(self::REFRESH_COOKIE_NAME);
 
         return response()->json([
             'success' => true,
-            'message' => __('messages.logout_success')
+            'message' => __('messages.logout_success'),
         ])->withCookie($forgetCookie);
     }
 
-    public function me()
+    public function me(): JsonResponse
     {
         $user = Auth::guard('sanctum')->user();
 
         if (!$user) {
-            return response()->json([
-                'message' => __('messages.unauthorized')
-            ], 401);
+            return response()->json(['message' => __('messages.unauthorized')], 401);
         }
 
         return response()->json($user);
     }
 
-    public function user_activity()
+    public function user_activity(): JsonResponse
     {
         $user = Auth::guard('sanctum')->user();
 
@@ -230,34 +200,30 @@ class AuthController extends Controller
             $user->forceFill(['last_activity' => Carbon::now()])->saveQuietly();
         }
 
-        return response()->noContent();
+        return response()->json([
+            'message' => 'Activity updated successfully',
+            'status' => 'success',
+        ], 200);
     }
 
-    /**
-     * Architecture Helper: Atomic generation of standard short access arrays
-     * paired with long security cookie properties.
-     */
     private function issueTokens(User $user): array
     {
-        // 1. Create Short-Lived Access Token string
         $accessExpiry = Carbon::now()->addMinutes(self::ACCESS_TOKEN_EXPIRY_MINUTES);
         $accessTokenResult = $user->createToken('access_token', ['*'], $accessExpiry);
 
-        // 2. Create Long-Lived Refresh Token string (FIXED PROPERTY NAME HERE)
         $refreshExpiry = Carbon::now()->addMinutes(self::REFRESH_TOKEN_EXPIRY_MINUTES);
         $refreshTokenResult = $user->createToken('refresh_token', ['issue-access-token'], $refreshExpiry);
 
-        // 3. Encapsulate Refresh string into a secure back-channel cookie instance
         $cookie = cookie(
             self::REFRESH_COOKIE_NAME,
             $refreshTokenResult->plainTextToken,
             self::REFRESH_TOKEN_EXPIRY_MINUTES,
-            '/',                  // Path
-            null,                 // Domain
-            true,                 // Secure (HTTPS)
-            true,                 // HttpOnly
-            false,                // Raw
-            Cookie::SAMESITE_STRICT // SameSite Cross-Origin Mitigation
+            '/',
+            null,
+            true,
+            true,
+            false,
+            Cookie::SAMESITE_STRICT
         );
 
         return [$accessTokenResult->plainTextToken, $cookie];

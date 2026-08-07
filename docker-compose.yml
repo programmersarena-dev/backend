@@ -1,9 +1,38 @@
+x-app-common: &app-common
+    build:
+        context: .
+        dockerfile: Dockerfile
+    env_file:
+        - .env
+    environment: &app-env
+        DB_HOST: db
+        DB_PORT: "5432"
+        REDIS_HOST: redis
+        REDIS_PORT: "6379"
+        JUDGE_REDIS_URL: redis://redis:6379/0
+    entrypoint:
+        - /usr/local/bin/docker-entrypoint.sh
+    volumes:
+        - ./:/var/www/html
+        - vendor:/var/www/html/vendor
+        - storage:/var/www/html/storage
+        - bootstrap_cache:/var/www/html/bootstrap/cache
+        - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+        - app-network
+    depends_on:
+        db:
+            condition: service_healthy
+        redis:
+            condition: service_healthy
+    restart: unless-stopped
+
 services:
     redis:
         image: redis:7-alpine
         container_name: laravel-redis
-        ports:
-            - "6379:6379"
+        expose:
+            - "6379"
         networks:
             - app-network
         volumes:
@@ -15,7 +44,7 @@ services:
             retries: 5
 
     db:
-        image: postgres:14
+        image: postgres:14-alpine
         container_name: postgres-db
         env_file:
             - .env
@@ -23,97 +52,56 @@ services:
             POSTGRES_DB: ${DB_DATABASE}
             POSTGRES_USER: ${DB_USERNAME}
             POSTGRES_PASSWORD: ${DB_PASSWORD}
-        ports:
-            - "5432:5432"
+        expose:
+            - "5432"
         networks:
             - app-network
         volumes:
             - pgdata:/var/lib/postgresql/data
         healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
+            test:
+                ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
             interval: 10s
             timeout: 5s
             retries: 5
 
     laravel:
-        build:
-            context: .
-            dockerfile: Dockerfile
+        <<: *app-common
         container_name: laravel-app
-        env_file:
-            - .env
-        environment:
-            DB_HOST: db
-            DB_PORT: "5432"
-            REDIS_HOST: redis
-            REDIS_PORT: "6379"
-            JUDGE_REDIS_URL: redis://redis:6379/0
-        entrypoint:
-            - /usr/local/bin/docker-entrypoint.sh
-        volumes:
-            - ./:/var/www/html
-            - vendor:/var/www/html/vendor
-            - storage:/var/www/html/storage
-            - bootstrap_cache:/var/www/html/bootstrap/cache
-            - /var/run/docker.sock:/var/run/docker.sock
         ports:
             - "8000:80"
         tmpfs:
             - /tmp:size=128M
-        networks:
-            - app-network
-        depends_on:
-            - db
-            - redis
-        restart: unless-stopped
-        command: sh -c "php /var/www/html/artisan migrate --force && php /var/www/html/artisan db:seed --class=CountrySeeder --force && php-fpm --fpm-config /usr/local/etc/php-fpm.conf --daemonize && nginx -g 'daemon off;'"
+        command: >
+            sh -c "php artisan migrate --force &&
+                   php artisan db:seed --class=CountrySeeder --force &&
+                   php-fpm --fpm-config /usr/local/etc/php-fpm.conf --daemonize &&
+                   nginx -g 'daemon off;'"
 
     queue-worker:
-        build:
-            context: .
-            dockerfile: Dockerfile
+        <<: *app-common
         container_name: laravel-queue-worker
-        env_file:
-            - .env
-        environment:
-            DB_HOST: db
-            DB_PORT: "5432"
-            REDIS_HOST: redis
-            REDIS_PORT: "6379"
-            JUDGE_REDIS_URL: redis://redis:6379/0
-        entrypoint:
-            - /usr/local/bin/docker-entrypoint.sh
-        volumes:
-            - ./:/var/www/html
-            - vendor:/var/www/html/vendor
-            - storage:/var/www/html/storage
-            - bootstrap_cache:/var/www/html/bootstrap/cache
-            - /var/run/docker.sock:/var/run/docker.sock
+        depends_on:
+            db:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+            laravel:
+                condition: service_started
         tmpfs:
             - /tmp:size=64M
-        networks:
-            - app-network
-        depends_on:
-            - db
-            - redis
-        restart: unless-stopped
-        command: sh -c "php /var/www/html/artisan queue:work redis --sleep=3 --tries=3"
+        command: sh -c "php artisan queue:work redis --sleep=3 --tries=3 --max-time=3600"
 
     judge-consumer:
-        build:
-            context: .
-            dockerfile: Dockerfile
+        <<: *app-common
         container_name: judge-result-consumer
-        env_file:
-            - .env
-        environment:
-            DB_HOST: db
-            DB_PORT: "5432"
-            REDIS_HOST: redis
-            REDIS_PORT: "6379"
-            JUDGE_REDIS_URL: redis://redis:6379/0
-        entrypoint:
-            - /usr/local/bin/docker-entrypoint.sh
+        depends_on:
+            db:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+            laravel:
+                condition: service_started
         volumes:
             - ./:/var/www/html
             - vendor:/var/www/html/vendor
@@ -121,13 +109,7 @@ services:
             - bootstrap_cache:/var/www/html/bootstrap/cache
         tmpfs:
             - /tmp:size=64M
-        networks:
-            - app-network
-        depends_on:
-            - db
-            - redis
-        restart: unless-stopped
-        command: sh -c "php /var/www/html/artisan judge:worker"
+        command: sh -c "php artisan judge:worker"
 
 networks:
     app-network:

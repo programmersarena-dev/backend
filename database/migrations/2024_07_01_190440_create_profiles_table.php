@@ -1,7 +1,5 @@
 <?php
 
-use App\Models\Country;
-use App\Models\User;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -15,13 +13,13 @@ return new class extends Migration
     {
         Schema::create('profiles', function (Blueprint $table) {
             $table->id();
-            $table->foreignIdFor(User::class)
+            $table->foreignId('user_id')
                 ->unique()
-                ->constrained()
+                ->constrained('users')
                 ->cascadeOnDelete();
-            $table->foreignIdFor(Country::class)
+            $table->foreignId('country_id')
                 ->nullable()
-                ->constrained()
+                ->constrained('countries')
                 ->nullOnDelete();
             $table->string('first_name', 64)->nullable();
             $table->string('last_name', 64)->nullable();

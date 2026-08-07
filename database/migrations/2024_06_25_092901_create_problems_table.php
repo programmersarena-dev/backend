@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\Contest;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -15,9 +14,9 @@ return new class extends Migration
         Schema::create('problems', function (Blueprint $table) {
             $table->id();
 
-            $table->foreignIdFor(Contest::class, 'contest_id')
+            $table->foreignId('contest_id')
                   ->nullable()
-                  ->constrained()
+                  ->constrained('contests')
                   ->nullOnDelete();
 
             $table->string('code', 32)->nullable()->unique();

@@ -15,7 +15,7 @@ return new class extends Migration {
 
             $table->string('handle', 32)->unique()->comment('Unique username for profile URLs & logins');
             $table->string('name', 64)->comment('Display or Full Name shown on leaderboards');
-            $table->string('email', 128)->unique();
+            $table->string('email', 254)->unique();
 
             $table->string('user_type', 16)->default('user')->comment('user, admin, judge-daemon');
 

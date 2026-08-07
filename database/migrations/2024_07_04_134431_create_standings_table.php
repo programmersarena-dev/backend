@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('standings', function (Blueprint $table) {
             $table->id();
-            $table->foreignIdFor(\App\Models\Contest::class, 'contest_id');
-            $table->longText('result')->nullable();
+            $table->foreignId('contest_id')->constrained('contests')->cascadeOnDelete();
+            $table->jsonb('result')->nullable();
             $table->timestamps();
         });
     }

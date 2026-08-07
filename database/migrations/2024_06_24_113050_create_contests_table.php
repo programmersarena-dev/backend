@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
 
             $table->foreignId('type_id')
-                ->default(1)
+                ->nullable()
                 ->constrained('contest_types')
                 ->onDelete('restrict');
 

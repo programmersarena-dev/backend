@@ -13,15 +13,15 @@ return new class extends Migration {
         Schema::create('submissions', function (Blueprint $table) {
             $table->id();
 
-            $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->foreignId('problem_id')->constrained()->onDelete('cascade');
+            $table->foreignId('user_id')->constrained()->onDelete('restrict');
+            $table->foreignId('problem_id')->constrained()->onDelete('restrict');
 
             $table->string('language', 20);
             $table->string('status', 30)->default('Queued');
 
             $table->mediumText('code');
-            $table->mediumText('outputs')->nullable();
-            $table->mediumText('output')->nullable();
+            $table->mediumText('outputs')->nullable()->comment('Per-test-case outputs');
+            $table->mediumText('output')->nullable()->comment('Final combined/summary output');
             $table->text('error_message')->nullable();
 
             $table->unsignedInteger('time')->nullable()->comment('Execution time in ms');
@@ -31,6 +31,7 @@ return new class extends Migration {
             $table->timestamps();
 
             $table->index('status');
+            $table->index(['status', 'created_at']);
             $table->index(['user_id', 'problem_id', 'status']);
             $table->index(['problem_id', 'created_at']);
         });
