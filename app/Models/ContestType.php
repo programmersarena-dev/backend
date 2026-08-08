@@ -4,18 +4,19 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ContestType extends Model
 {
     use HasFactory;
 
-    protected $fillable = [
-        'id',
-        'name',
-    ];
+    protected $fillable = ['name'];
 
-    public function contest()
+    /**
+     * Contest types have many contests.
+     */
+    public function contests(): HasMany
     {
-        return $this->hasMany(Contest::class, 'id', 'type_id');
+        return $this->hasMany(Contest::class, 'type_id');
     }
 }

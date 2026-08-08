@@ -19,14 +19,14 @@ class SubmissionResource extends JsonResource
             'language' => $this->language,
             'status' => $this->status,
 
-            'time' => ($this->time ?? 0) . ' ms',
-            'memory' => ($this->memory ?? 0) . ' KB',
+            'time' => ($this->time ?? 0),
+            'memory' => ($this->memory ?? 0),
 
             'created_at' => $this->created_at?->toIso8601String(),
 
             'username' => $this->whenLoaded(
                 'user',
-                fn() => $this->user->name,
+                fn() => $this->user->handle,
                 'Unknown User'
             ),
 

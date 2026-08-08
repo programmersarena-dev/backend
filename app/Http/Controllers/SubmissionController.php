@@ -86,7 +86,7 @@ class SubmissionController extends Controller
             'memory' => ($submission->memory ?? 0) . ' KB',
             'sent_time' => $submission->created_at?->toIso8601String(),
             'code' => json_decode($submission->code) ?? $submission->code,
-            'outputs' => $canViewDetails ? $submission->outputs : [],
+            'outputs' => $canViewDetails ? json_decode($submission->outputs) : [],
         ]);
     }
 

@@ -71,7 +71,7 @@ class GradeSubmissionJob implements ShouldQueue
             'subtasks' => []
         ];
 
-        $problemFolder = storage_path('app/public/' . $problem->test_cases);
+        $problemFolder = storage_path('app/public/' . $problem->test_cases_path);
 
         if ($isIOI) {
             // IOI Logic: Process test cases grouped inside subtask folders using points.json maps

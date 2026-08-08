@@ -16,12 +16,12 @@ class ContestFactory extends Factory
      */
     public function definition(): array
     {
-        $startDate = $this->faker->boolean(3)
+        $startDate = $this->faker->boolean(2)
             ? $this->faker->dateTimeBetween('+1 day', '+7 days')
             : $this->faker->dateTimeBetween('-60 days', '-1 day');
 
         return [
-            'type_id' => $this->faker->numberBetween(1, 4),
+            'type_id' => $this->faker->numberBetween(1, 3),
             'name' => rtrim($this->faker->sentence(3), '.'),
             'start_date' => $startDate,
 

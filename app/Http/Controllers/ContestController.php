@@ -9,6 +9,7 @@ use App\Models\Contest;
 use App\Models\Problem;
 use App\Models\Submission;
 use App\Models\User;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -40,7 +41,6 @@ class ContestController extends Controller
         if ($contest->getStatus() !== 'notStarted') {
             $user = Auth::guard('sanctum')->user();
 
-            // 1. Fetch problems eager-loading translations and counting distinct accepted users
             $problems = $contest->problems()
                 ->with(['translations'])
                 ->withCount([
@@ -51,7 +51,6 @@ class ContestController extends Controller
                 ->orderBy('id', 'asc')
                 ->get();
 
-            // 2. Fetch all problem IDs solved by current user in 1 single query
             $solvedProblemIds = ($user && $problems->isNotEmpty())
                 ? $user->submissions()
                     ->whereIn('problem_id', $problems->pluck('id'))
@@ -61,7 +60,8 @@ class ContestController extends Controller
                     ->flip()
                 : collect();
 
-            // 3. Transform translated name and solved state in memory
+            \Log::info($problems);
+
             $problems->transform(function ($problem) use ($solvedProblemIds) {
                 $problem->name = $problem->getTranslation('name');
                 $problem->accepted = $solvedProblemIds->has($problem->id);
@@ -70,7 +70,6 @@ class ContestController extends Controller
             });
         }
 
-        // 4. Resolve acceptable languages directly
         $acceptableLanguages = (new Problem)->acceptableLanguages();
 
         return [
@@ -80,10 +79,10 @@ class ContestController extends Controller
         ];
     }
 
-    public function register(Contest $contest, Request $request): JsonResponse|Response
+    public function register(Contest $contest, Request $request): JsonResponse
     {
         if (!$contest->active) {
-            return response('', 404);
+            return response()->json(['message' => __('contest.not_found')], 404);
         }
 
         if ($contest->getStatus() !== 'notStarted') {
@@ -91,65 +90,138 @@ class ContestController extends Controller
         }
 
         $user = Auth::user();
+        if (!$user) {
+            return response()->json(['message' => __('auth.unauthorized')], 401);
+        }
+
         $contestType = $contest->type?->name;
 
-        if ($contest->isUserOfficial($user->id)) {
-            return response()->json(['message' => __('contest.already_official')], 403);
-        }
-        if ($contest->isUserUnOfficial($user->id)) {
-            return response()->json(['message' => __('contest.already_unofficial')], 403);
+        if ($contest->isUserRegistered($user->id)) {
+            return response()->json(['message' => __('contest.already_registered')], 403);
         }
 
-        $isOfficialParticipant = !$contest->official;
+        $isOfficial = !$contest->official;
 
         if ($contestType === 'Duel') {
-            $opponentName = $request->input('opponent');
-            $opponent = User::where('name', $opponentName)->first(['id']);
+            return $this->registerForDuel($contest, $user, $request, $isOfficial);
+        }
 
-            if (!$opponent) {
-                return response()->json(['message' => __('contest.user_not_found')], 404);
-            }
+        return $this->registerForClassic($contest, $user, $isOfficial);
+    }
 
-            $existingInvite = $contest->participants()
-                ->where('user_id', $opponent->id)
-                ->where('opponent_id', $user->id)
-                ->first();
+    private function registerForClassic(Contest $contest, User $user, bool $isOfficial): JsonResponse
+    {
+        try {
+            DB::transaction(function () use ($contest, $user, $isOfficial) {
+                // Attach participant
+                $contest->participants()->attach($user->id, [
+                    'is_official' => $isOfficial,
+                ]);
 
-            return DB::transaction(function () use ($contest, $user, $opponent, $isOfficialParticipant, $existingInvite) {
+                // Ensure standings exist and add user
+                $this->ensureStandingsExist($contest);
+                $contest->standings->addUserStanding($user->name, 'Classic');
+            });
+
+            return response()->json(['message' => __('contest.registered')], 200);
+        } catch (UniqueConstraintViolationException $e) {
+            // Should not happen because we already checked, but just in case
+            return response()->json(['message' => __('contest.already_registered')], 409);
+        } catch (\Exception $e) {
+            \Log::error('Classic registration failed', ['user' => $user->id, 'contest' => $contest->id, 'error' => $e->getMessage()]);
+            return response()->json(['message' => __('contest.registration_failed')], 500);
+        }
+    }
+
+    /**
+     * Register a user for a Duel contest.
+     */
+    private function registerForDuel(Contest $contest, User $user, Request $request, bool $isOfficial): JsonResponse
+    {
+        $opponentName = $request->input('opponent');
+        if (empty($opponentName)) {
+            return response()->json(['message' => __('contest.opponent_required')], 422);
+        }
+
+        // Find opponent
+        $opponent = User::where('name', $opponentName)->first();
+        if (!$opponent) {
+            return response()->json(['message' => __('contest.user_not_found')], 404);
+        }
+
+        // Prevent self-duel
+        if ($opponent->id === $user->id) {
+            return response()->json(['message' => __('contest.self_duel_not_allowed')], 422);
+        }
+
+        // Check if opponent is already registered in this contest
+        if ($contest->isUserRegistered($opponent->id)) {
+            return response()->json(['message' => __('contest.opponent_already_registered')], 422);
+        }
+
+        try {
+            return DB::transaction(function () use ($contest, $user, $opponent, $isOfficial) {
+                // Lock both potential participant rows to avoid race conditions
+                $lockedUsers = $contest->participants()
+                    ->whereIn('user_id', [$user->id, $opponent->id])
+                    ->lockForUpdate()
+                    ->get();
+
+                // Check if there is a pending invitation from opponent to user
+                $existingInvite = $contest->participants()
+                    ->where('user_id', $opponent->id)
+                    ->where('opponent_id', $user->id)
+                    ->first();
+
+                // Ensure standings exist
+                $this->ensureStandingsExist($contest);
+
                 if ($existingInvite) {
-                    $contest->participants()->updateExistingPivot($opponent->id, ['opponent_id' => $user->id]);
-                    $contest->participants()->attach($user->id, [
-                        'is_official' => $isOfficialParticipant,
-                        'opponent_id' => $opponent->id
+                    // Accept the invitation: update opponent's row and attach current user
+                    $contest->participants()->updateExistingPivot($opponent->id, [
+                        'opponent_id' => $user->id,
                     ]);
 
-                    $contest->standings?->addUserStanding([$user->name, $existingInvite->name], 'Duel');
-                    return response()->json(['message' => __('contest.registered')], 202);
+                    $contest->participants()->attach($user->id, [
+                        'is_official' => $isOfficial,
+                        'opponent_id' => $opponent->id,
+                    ]);
+
+                    // Add both users to standings (if not already present)
+                    $contest->standings->addUserStanding($user->name, 'Duel');
+                    $contest->standings->addUserStanding($opponent->name, 'Duel');
+
+                    return response()->json(['message' => __('contest.registered_duel_accepted')], 200);
                 }
 
+                // New duel request: register the user with opponent_id, opponent is not yet registered
                 $contest->participants()->attach($user->id, [
-                    'is_official' => $isOfficialParticipant,
-                    'opponent_id' => $opponent->id
+                    'is_official' => $isOfficial,
+                    'opponent_id' => $opponent->id,
                 ]);
+
+                // Add only the current user to standings (opponent will be added when they accept)
+                $contest->standings->addUserStanding($user->name, 'Duel');
 
                 return response()->json(['message' => __('contest.registered_waiting')], 202);
             });
-        }
-
-        DB::transaction(function () use ($contest, $user, $isOfficialParticipant) {
-            $contest->participants()->attach($user->id, [
-                'is_official' => $isOfficialParticipant
+        } catch (UniqueConstraintViolationException $e) {
+            return response()->json(['message' => __('contest.already_registered')], 409);
+        } catch (\Exception $e) {
+            \Log::error('Duel registration failed', [
+                'user' => $user->id,
+                'opponent' => $opponent->id,
+                'contest' => $contest->id,
+                'error' => $e->getMessage(),
             ]);
-            $contest->standings?->addUserStanding($user->name, 'Classic');
-        });
-
-        return response()->json(['message' => __('contest.registered')], 202);
+            return response()->json(['message' => __('contest.registration_failed')], 500);
+        }
     }
 
-    public function unregister(Contest $contest): JsonResponse|Response
+    public function unregister(Contest $contest): JsonResponse
     {
         if (!$contest->active) {
-            return response('', 404);
+            return response()->json(['message' => __('contest.not_found')], 404);
         }
 
         if ($contest->getStatus() !== 'notStarted') {
@@ -157,21 +229,71 @@ class ContestController extends Controller
         }
 
         $user = Auth::user();
+        if (!$user) {
+            return response()->json(['message' => __('auth.unauthorized')], 401);
+        }
 
         if (!$contest->isUserRegistered($user->id)) {
             return response()->json(['message' => __('contest.not_registered')], 403);
         }
 
         if ($contest->official && $contest->isUserOfficial($user->id)) {
-            return response()->json(['message' => __('contest.cannot_unregister')], 403);
+            return response()->json(['message' => __('contest.cannot_unregister_official')], 403);
         }
 
-        DB::transaction(function () use ($contest, $user) {
-            $contest->participants()->detach($user->id);
-            $contest->standings?->removeUserStanding($user->name, $contest->type?->name);
-        });
+        try {
+            DB::transaction(function () use ($contest, $user) {
+                $contestType = $contest->type?->name;
 
-        return response()->json(['message' => __('contest.unregistered')], 202);
+                // For Duel: remove opponent_id references from other participants
+                if ($contestType === 'Duel') {
+                    // Find the opponent of this user (if any)
+                    $participant = $contest->participants()
+                        ->where('user_id', $user->id)
+                        ->first(['opponent_id']);
+
+                    if ($participant && $participant->opponent_id) {
+                        // Clear opponent_id from that opponent's row (if they are still registered)
+                        $contest->participants()
+                            ->where('user_id', $participant->opponent_id)
+                            ->update(['opponent_id' => null]);
+                    }
+
+                    // Also, if someone has this user as opponent, clear it
+                    $contest->participants()
+                        ->where('opponent_id', $user->id)
+                        ->update(['opponent_id' => null]);
+                }
+
+                // Remove the user from participants
+                $contest->participants()->detach($user->id);
+
+                // Remove from standings if they exist
+                if ($contest->standings) {
+                    $contest->standings->removeUserStanding($user->name, $contestType);
+                }
+            });
+
+            return response()->json(['message' => __('contest.unregistered')], 200);
+        } catch (\Exception $e) {
+            \Log::error('Unregistration failed', ['user' => $user->id, 'contest' => $contest->id, 'error' => $e->getMessage()]);
+            return response()->json(['message' => __('contest.unregistration_failed')], 500);
+        }
+    }
+
+    /**
+     * Ensure that a standings record exists for the contest.
+     * Creates one if missing.
+     */
+    private function ensureStandingsExist(Contest $contest): void
+    {
+        if (!$contest->standings) {
+            $contest->standings()->create([
+                // fill with any required fields, e.g., 'contest_id' is auto-assigned
+                // add other defaults if needed
+            ]);
+            $contest->refresh(); // reload relationship
+        }
     }
 
     public function getContestProblemSubmissions(Contest $contest, int $problemId, string $username): AnonymousResourceCollection

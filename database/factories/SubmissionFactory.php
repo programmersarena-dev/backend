@@ -20,10 +20,11 @@ class SubmissionFactory extends Factory
     {
         $status = $this->faker->randomElement([
             'Accepted',
-            'Wrong Answer',
-            'Time Limit Exceeded',
-            'Runtime Error',
-            'Compilation Error'
+            'WA',
+            'TL',
+            'ML',
+            'RE',
+            'CE'
         ]);
 
         return [

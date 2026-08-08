@@ -223,7 +223,7 @@ class AuthController extends Controller
             true,
             true,
             false,
-            Cookie::SAMESITE_STRICT
+            Cookie::SAMESITE_LAX
         );
 
         return [$accessTokenResult->plainTextToken, $cookie];

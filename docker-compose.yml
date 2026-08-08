@@ -78,6 +78,17 @@ services:
                    php-fpm --fpm-config /usr/local/etc/php-fpm.conf --daemonize &&
                    nginx -g 'daemon off;'"
 
+    judge-listener:
+        build: .
+        command: php artisan judge:listen-results
+        restart: unless-stopped
+        depends_on:
+            - redis
+        environment:
+            - REDIS_PREFIX=programmersarena_database_
+        networks:
+            - backend-network
+
     queue-worker:
         <<: *app-common
         container_name: laravel-queue-worker
