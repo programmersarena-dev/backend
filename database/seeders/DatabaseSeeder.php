@@ -30,11 +30,10 @@ class DatabaseSeeder extends Seeder
                     : 'test_cases/sample';
 
                 \App\Models\Problem::factory(rand(4, 6))->create([
-                    'contest_id' => $contest->id,
                     'test_cases_path' => $testCasesPath
                 ]);
 
-                \App\Models\Standing::factory()->create([
+                \App\Models\ContestStanding::factory()->create([
                     'contest_id' => $contest->id
                 ]);
             });

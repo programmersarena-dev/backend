@@ -8,10 +8,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 
 class Problem extends Model
 {
     use HasFactory;
+    use SoftDeletes;
 
     protected $fillable = [
         'contest_id',
@@ -85,18 +88,21 @@ class Problem extends Model
     /**
      * Calculate problem letter identifier ('A', 'B', 'C'...) inside a contest.
      */
-    public function char(): string
+    public function char(): Attribute
     {
-        if (!$this->contest_id) {
-            return $this->code ?? (string) $this->id;
-        }
+        return Attribute::make(
+            get: function () {
+                if (!$this->contest_id) {
+                    return null;
+                }
 
-        // Count how many problems exist in this contest with a lower ID
-        $index = static::where('contest_id', $this->contest_id)
-            ->where('id', '<', $this->id)
-            ->count();
+                $index = static::where('contest_id', $this->contest_id)
+                    ->where('id', '<', $this->id)
+                    ->count();
 
-        return chr(ord('A') + $index);
+                return chr(ord('A') + $index);
+            }
+        )->shouldCache();
     }
 
     /**
@@ -136,18 +142,29 @@ class Problem extends Model
      * Check if a specific user (or authenticated user) has solved this problem.
      * Updated: fixed column from 'verdict' to 'status'.
      */
-    public function isSolvedBy($user = null): bool
+    public function accepted(): Attribute
     {
-        $user = $user ?? Auth::guard('sanctum')->user();
+        return Attribute::make(
+            get: function (): bool {
+                $user = Auth::guard('sanctum')->user();
 
-        if (!$user) {
-            return false;
-        }
+                if (!$user) {
+                    return false;
+                }
 
-        return $this->submissions()
-            ->where('user_id', $user->id)
-            ->whereIn('status', Submission::ACCEPTED_STATUSES ?? ['Accepted', '100'])
-            ->exists();
+                if ($this->relationLoaded('submissions')) {
+                    return $this->submissions
+                        ->where('user_id', $user->id)
+                        ->whereIn('status', Submission::ACCEPTED_STATUSES)
+                        ->isNotEmpty();
+                }
+
+                return $this->submissions()
+                    ->where('user_id', $user->id)
+                    ->whereIn('status', Submission::ACCEPTED_STATUSES)
+                    ->exists();
+            }
+        )->shouldCache();
     }
 
     /* -------------------------------------------------------------------------- */
@@ -156,18 +173,21 @@ class Problem extends Model
 
     /**
      * Accessor for unique solved user count.
-     * Updated: fixed column from 'verdict' to 'status'.
      */
-    public function getAcceptedProblemsCountAttribute(): int
+    protected function acceptedProblemsCount(): Attribute
     {
-        if (array_key_exists('accepted_problems_count', $this->attributes)) {
-            return (int) $this->attributes['accepted_problems_count'];
-        }
+        return Attribute::make(
+            get: function () {
+                if (array_key_exists('accepted_problems_count', $this->attributes)) {
+                    return (int) $this->attributes['accepted_problems_count'];
+                }
 
-        return $this->attributes['accepted_problems_count'] = $this->submissions()
-            ->whereIn('status', ['Accepted', '100'])
-            ->distinct('problem_id')
-            ->count('problem_id');
+                return $this->submissions()
+                    ->whereIn('status', ['Accepted', '100'])
+                    ->distinct('problem_id')
+                    ->count('problem_id');
+            }
+        );
     }
 
     /* -------------------------------------------------------------------------- */

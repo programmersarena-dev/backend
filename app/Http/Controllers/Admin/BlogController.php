@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\BlogResource;
-use App\Models\BlogTranslation;
 use Illuminate\Http\Request;
+
 use App\Models\Blog;
+use App\Models\BlogTranslation;
+
 use App\Http\Requests\StoreBlogRequest;
 use App\Http\Requests\UpdateBlogRequest;
+
+use App\Http\Resources\BlogResource;
 
 class BlogController extends Controller
 {

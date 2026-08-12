@@ -3,14 +3,18 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\StoreProblemRequest;
-use App\Http\Requests\UpdateProblemRequest;
-use App\Http\Resources\ProblemListResource;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use ZipArchive;
+
 use App\Models\Contest;
 use App\Models\Problem;
 use App\Models\ProblemTranslation;
-use Illuminate\Support\Facades\Storage;
-use ZipArchive;
+
+use App\Http\Requests\StoreProblemRequest;
+use App\Http\Requests\UpdateProblemRequest;
+
+use App\Http\Resources\Admin\Problem\ProblemListResource;
 
 class ProblemController extends Controller
 {
@@ -26,7 +30,7 @@ class ProblemController extends Controller
 
     public function store(Contest $contest, StoreProblemRequest $request)
     {
-        if (!$contest->isEnded())
+        if ($contest->isEnded())
             return response()->json(['message' => 'Contest ended'], 404);
         $data = $request->validated();
 
@@ -48,15 +52,21 @@ class ProblemController extends Controller
 
         $problem = Problem::create([
             'contest_id' => $contest->id,
+            'slug' => $this->generateUniqueSlug($data['name']),
             'name' => $data['name'],
-            'tags' => $data['tags'] ?? '',
+            // The frontend already sends tags as a JSON.stringify'd string
+            // (matches the 'nullable|string' validation rule), so this is
+            // already valid JSON text — encoding it again here would
+            // double-encode it into an escaped string-within-a-string.
+            'tags' => $data['tags'] ?? null,
             'time_limit' => $data['time_limit'],
             'memory_limit' => $data['memory_limit'],
+            'difficulty' => $data['difficulty'] ?? null,
             'score' => $data['score'],
             'description' => $data['description'] ?? '',
             'input' => $data['input'] ?? '',
             'output' => $data['output'] ?? '',
-            'test_cases' => 'test_cases/' . pathinfo($filename, PATHINFO_FILENAME),
+            'test_cases_path' => 'test_cases/' . pathinfo($filename, PATHINFO_FILENAME),
             'note' => $data['note'] ?? '',
         ]);
 
@@ -88,7 +98,7 @@ class ProblemController extends Controller
         $problem = $contest->problems()->orderBy('id', 'asc')->skip(ord($char) - ord('A'))->first();
 
         $problem->tags = json_decode($problem->tags);
-        $problem->test_cases = '';
+
         return [
             'id' => $problem->id,
             'contest_id' => $problem->contest_id,
@@ -96,38 +106,40 @@ class ProblemController extends Controller
             'tags' => $problem->tags,
             'time_limit' => $problem->time_limit,
             'memory_limit' => $problem->memory_limit,
+            'difficulty' => $problem->difficulty,
             'score' => $problem->score,
             'description' => $problem->description,
             'input' => $problem->input,
             'output' => $problem->output,
-            'test_cases' => $problem->test_cases,
+            // Server storage path is intentionally not exposed to the client.
+            'test_cases' => '',
             'note' => $problem->note,
 
-            "name_en" => $problem->getTranslation("name","en"),
-            "description_en" => $problem->getTranslation("description","en"),
-            "input_en" => $problem->getTranslation("input","en"),
-            "output_en" => $problem->getTranslation("output","en"),
-            "note_en" => $problem->getTranslation("note","en"),
-            "name_ru" => $problem->getTranslation("name","ru"),
-            "description_ru" => $problem->getTranslation("description","ru"),
-            "input_ru" => $problem->getTranslation("input","ru"),
-            "output_ru" => $problem->getTranslation("output","ru"),
-            "note_ru" => $problem->getTranslation("note","ru"),
+            "name_en" => $problem->getTranslation("name", "en"),
+            "description_en" => $problem->getTranslation("description", "en"),
+            "input_en" => $problem->getTranslation("input", "en"),
+            "output_en" => $problem->getTranslation("output", "en"),
+            "note_en" => $problem->getTranslation("note", "en"),
+            "name_ru" => $problem->getTranslation("name", "ru"),
+            "description_ru" => $problem->getTranslation("description", "ru"),
+            "input_ru" => $problem->getTranslation("input", "ru"),
+            "output_ru" => $problem->getTranslation("output", "ru"),
+            "note_ru" => $problem->getTranslation("note", "ru"),
         ];
     }
 
     public function update(Contest $contest, $char, UpdateProblemRequest $request)
     {
-        if (!$contest->isEnded())
+        if ($contest->isEnded())
             return response()->json(['error' => 'Contest ended'], 404);
         $problem = $contest->problems()->orderBy('id', 'asc')->skip(ord($char) - ord('A'))->first();
 
         $data = $request->validated();
 
         if ($request->hasFile('test_cases')) {
-            $oldExtractPath = storage_path('app/public/' . $problem->test_cases);
+            $oldExtractPath = storage_path('app/public/' . $problem->test_cases_path);
             if (is_dir($oldExtractPath)) {
-                Storage::disk('public')->deleteDirectory($problem->test_cases);
+                Storage::disk('public')->deleteDirectory($problem->test_cases_path);
             }
 
             $file = $request->file('test_cases');
@@ -146,22 +158,22 @@ class ProblemController extends Controller
                 return response()->json(['message' => 'Zip faýly açmakda ýalňyşlyk ýüze çykdy'], 500);
             }
 
-            $problem->test_cases = 'test_cases/' . pathinfo($filename, PATHINFO_FILENAME);
+            $problem->test_cases_path = 'test_cases/' . pathinfo($filename, PATHINFO_FILENAME);
         }
 
-        $problem->update([
-            'name' => $data['name'],
-            'tags' => $data['tags'] ?? '',
-            'time_limit' => $data['time_limit'],
-            'memory_limit' => $data['memory_limit'],
-            'score' => $data['score'],
-            'description' => $data['description'] ?? '',
-            'input' => $data['input'] ?? '',
-            'output' => $data['output'] ?? '',
-            'note' => $data['note'] ?? '',
-        ]);
+        $problem->name = $data['name'];
+        $problem->tags = $data['tags'] ?? null;
+        $problem->time_limit = $data['time_limit'];
+        $problem->memory_limit = $data['memory_limit'];
+        $problem->difficulty = $data['difficulty'] ?? null;
+        $problem->score = $data['score'];
+        $problem->description = $data['description'] ?? '';
+        $problem->input = $data['input'] ?? '';
+        $problem->output = $data['output'] ?? '';
+        $problem->note = $data['note'] ?? '';
+        $problem->save();
 
-        $problem_en = ProblemTranslation::where('problem_id',$problem->id)->where('language','en')->firstOrFail();
+        $problem_en = ProblemTranslation::where('problem_id', $problem->id)->where('language', 'en')->firstOrFail();
         $problem_en->update([
             'name' => $data['name_en'],
             'description' => $data['description_en'] ?? '',
@@ -170,7 +182,7 @@ class ProblemController extends Controller
             'note' => $data['note_en'] ?? '',
         ]);
 
-        $problem_ru = ProblemTranslation::where('problem_id',$problem->id)->where('language','ru')->firstOrFail();
+        $problem_ru = ProblemTranslation::where('problem_id', $problem->id)->where('language', 'ru')->firstOrFail();
         $problem_ru->update([
             'name' => $data['name_ru'],
             'description' => $data['description_ru'] ?? '',
@@ -187,12 +199,12 @@ class ProblemController extends Controller
         if (!$contest->isEnded())
             return response()->json(['message' => 'Contest ended'], 404);
         $problem = $contest->problems()->orderBy('id', 'asc')->skip(ord($char) - ord('A'))->first();
-        $problem_en = ProblemTranslation::where('problem_id',$problem->id)->where('language','en')->firstOrFail();
-        $problem_ru = ProblemTranslation::where('problem_id',$problem->id)->where('language','ru')->firstOrFail();
+        $problem_en = ProblemTranslation::where('problem_id', $problem->id)->where('language', 'en')->firstOrFail();
+        $problem_ru = ProblemTranslation::where('problem_id', $problem->id)->where('language', 'ru')->firstOrFail();
 
-        $extractPath = storage_path('app/public/' . $problem->test_cases);
+        $extractPath = storage_path('app/public/' . $problem->test_cases_path);
         if (is_dir($extractPath)) {
-            Storage::disk('public')->deleteDirectory($problem->test_cases);
+            Storage::disk('public')->deleteDirectory($problem->test_cases_path);
         }
 
         $problem->delete();
@@ -206,7 +218,7 @@ class ProblemController extends Controller
     {
         $problem = $contest->problems()->orderBy('id', 'asc')->skip(ord($char) - ord('A'))->first();
 
-        $testCasesPath = storage_path('app/public/' . $problem->test_cases);
+        $testCasesPath = storage_path('app/public/' . $problem->test_cases_path);
         $zipFileName = $problem->name . '-test-cases.zip';
         $zipFilePath = storage_path('app/public/' . $zipFileName);
 
@@ -226,5 +238,23 @@ class ProblemController extends Controller
         }
 
         return response()->download($zipFilePath)->deleteFileAfterSend(true);
+    }
+
+    /**
+     * `slug` is globally unique on `problems` (not scoped per contest), so
+     * two problems named e.g. "A" in different contests need distinct slugs.
+     */
+    private function generateUniqueSlug(string $name): string
+    {
+        $base = Str::slug($name);
+        $slug = $base;
+        $suffix = 2;
+
+        while (Problem::withTrashed()->where('slug', $slug)->exists()) {
+            $slug = "{$base}-{$suffix}";
+            $suffix++;
+        }
+
+        return $slug;
     }
 }

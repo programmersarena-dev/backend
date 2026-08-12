@@ -3,18 +3,21 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\StoreContestRequest;
-use App\Http\Requests\UpdateContestRequest;
-use App\Http\Resources\ContestDetailResource;
-use App\Http\Resources\ContestListResource;
-use App\Models\Contest;
-use App\Models\ContestType;
-use App\Models\Standing;
-use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Notification;
 use App\Notifications\ContestNotification;
+
+use App\Models\Contest;
+use App\Models\ContestType;
+use App\Models\ContestStanding;
+use App\Models\User;
+
+use App\Http\Requests\StoreContestRequest;
+use App\Http\Requests\UpdateContestRequest;
+
+use App\Http\Resources\Admin\Contest\ContestDetailResource;
+use App\Http\Resources\Admin\Contest\ContestListResource;
 
 class ContestController extends Controller
 {
@@ -44,7 +47,6 @@ class ContestController extends Controller
         return ContestListResource::collection($paginatedContests);
     }
 
-
     /**
      * Show the form for creating a new resource.
      */
@@ -61,27 +63,24 @@ class ContestController extends Controller
         $data = $request->validated();
 
         $users = User::all()->keyBy('name');
-
         $type = ContestType::where('name', $data['type'])->firstOrFail();
 
-        $authorIds = collect($data['authors'])->map(function ($userName) use ($users) {
-            return $users[$userName]->id ?? 0;
-        });
-
-        $participantIds = $this->getParticipantIds($data['participants'], $data['type']);
+        [$hours, $minutes] = explode(':', $data['duration']);
+        $durationMinutes = ((int) $hours * 60) + (int) $minutes;
 
         $contest = Contest::create([
             'type_id' => $type->id,
             'name' => $data['name'],
-            'authorIds' => json_encode($authorIds),
             'start_date' => Carbon::parse($data['start_date'])->setTimezone('UTC')->toIso8601String(),
-            'duration' => $data['duration'],
-            'participantIds' => json_encode($participantIds),
+            'duration_minutes' => $durationMinutes,
             'official' => $data['official'],
             'active' => $data['active'],
         ]);
 
-        Standing::create([
+        $this->syncAuthors($contest, $data['authors'], $users);
+        $this->syncParticipants($contest, $data['participants'], $data['type'], $users);
+
+        ContestStanding::create([
             'contest_id' => $contest->id,
         ]);
 
@@ -115,25 +114,22 @@ class ContestController extends Controller
         $data = $request->validated();
 
         $users = User::all()->keyBy('name');
-
         $type = ContestType::where('name', $data['type'])->firstOrFail();
 
-        $authorIds = collect($data['authors'])->map(function ($userName) use ($users) {
-            return $users[$userName]->id ?? 0;
-        });
-
-        $participantIds = $this->getParticipantIds($data['participants'], $data['type']);
+        [$hours, $minutes] = explode(':', $data['duration']);
+        $durationMinutes = ((int) $hours * 60) + (int) $minutes;
 
         $contest->update([
             'type_id' => $type->id,
             'name' => $data['name'],
-            'authorIds' => json_encode($authorIds),
             'start_date' => Carbon::parse($data['start_date'])->setTimezone('UTC')->toIso8601String(),
-            'duration' => $data['duration'],
-            'participantIds' => json_encode($participantIds),
+            'duration_minutes' => $durationMinutes,
             'official' => $data['official'],
             'active' => $data['active'],
         ]);
+
+        $this->syncAuthors($contest, $data['authors'], $users);
+        $this->syncParticipants($contest, $data['participants'], $data['type'], $users);
 
         return response()->json([
             'message' => 'Üstünlikli üýtgedildi',
@@ -184,30 +180,70 @@ class ContestController extends Controller
         ], 404);
     }
 
-    private function getParticipantIds($participants, $type)
+    /**
+     * Sync the contest_author pivot from a list of usernames.
+     * Requires Contest::authors(): belongsToMany(User::class, 'contest_author').
+     */
+    private function syncAuthors(Contest $contest, array $authorNames, $users): void
     {
-        $users = User::all()->keyBy('name');
+        $authorIds = collect($authorNames)
+            ->map(fn ($userName) => $users[$userName]->id ?? null)
+            ->filter()
+            ->values();
 
+        $contest->authors()->sync($authorIds);
+    }
+
+    /**
+     * Sync the contest_user pivot (participants) from the official/unofficial
+     * username lists, setting is_official and, for Duel contests, opponent_id
+     * on both sides of each pairing.
+     * Requires Contest::participants(): belongsToMany(User::class, 'contest_user')
+     *   ->withPivot(['is_official', 'opponent_id', 'old_rating', 'rating_change'])
+     *   ->withTimestamps();
+     */
+    private function syncParticipants(Contest $contest, array $participants, string $type, $users): void
+    {
         $isDuel = $type === 'Duel';
+        $sync = [];
 
-        $mapFn = function ($entry) use ($users, $isDuel) {
-            if ($isDuel) {
-                return [
-                    $users[$entry[0]]->id ?? 0,
-                    $users[$entry[1]]->id ?? 0
-                ];
+        foreach (['official', 'unofficial'] as $group) {
+            $isOfficial = $group === 'official';
+
+            foreach ($participants[$group] ?? [] as $entry) {
+                if ($isDuel) {
+                    [$nameA, $nameB] = $entry;
+                    $userA = $users[$nameA] ?? null;
+                    $userB = $users[$nameB] ?? null;
+
+                    if ($userA) {
+                        $sync[$userA->id] = [
+                            'is_official' => $isOfficial,
+                            'opponent_id' => $userB->id ?? null,
+                        ];
+                    }
+                    if ($userB) {
+                        $sync[$userB->id] = [
+                            'is_official' => $isOfficial,
+                            'opponent_id' => $userA->id ?? null,
+                        ];
+                    }
+                } else {
+                    $user = $users[$entry] ?? null;
+                    if ($user) {
+                        $sync[$user->id] = [
+                            'is_official' => $isOfficial,
+                            'opponent_id' => null,
+                        ];
+                    }
+                }
             }
-            return $users[$entry]->id ?? 0;
-        };
+        }
 
-        $officialParticipantIds = collect($participants['official'])->map($mapFn);
-        $unofficialParticipantIds = collect($participants['unofficial'])->map($mapFn);
-
-        $participantIds = [
-            'official' => $officialParticipantIds,
-            'unofficial' => $unofficialParticipantIds,
-        ];
-
-        return $participantIds;
+        // sync() replaces the full pivot set for this contest with $sync.
+        // old_rating / rating_change are intentionally left untouched here —
+        // they belong to the post-contest rating calculation step, not
+        // contest creation/editing.
+        $contest->participants()->sync($sync);
     }
 }

@@ -49,18 +49,8 @@ class ProblemFactory extends Factory
             'output' => fake()->paragraph(),
             'note' => fake()->boolean(40) ? fake()->sentence() : null,
 
-            'test_cases_path' => 'test_cases/sample',
+            'test_cases_path' => null,
             'is_public' => true,
         ];
-    }
-
-    /**
-     * State for standalone problems outside any contest.
-     */
-    public function standalone(): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'contest_id' => null,
-        ]);
     }
 }

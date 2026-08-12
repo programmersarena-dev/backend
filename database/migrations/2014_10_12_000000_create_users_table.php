@@ -12,6 +12,8 @@ return new class extends Migration {
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
+            $table->integer('current_rating')->default(0)->index();
+            $table->integer('max_rating')->default(0);
 
             $table->string('handle', 32)->unique()->comment('Unique username for profile URLs & logins');
             $table->string('name', 64)->comment('Display or Full Name shown on leaderboards');

@@ -1,25 +1,30 @@
 <?php
 
-use App\Http\Controllers\Admin\ImageController as AdminImageController;
+use Illuminate\Support\Facades\Route;
+
+use App\Models\ContestType;
+use App\Models\User;
+
 use App\Http\Controllers\Auth\EmailVerificationController;
-use App\Http\Controllers\AuthController;
-use App\Http\Controllers\FileController;
-use App\Http\Controllers\ContestController;
-use App\Http\Controllers\CountryController;
+use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\LocalizationController;
-use App\Http\Controllers\ProblemController;
-use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\RatingController;
-use App\Http\Controllers\StandingController;
-use App\Http\Controllers\SubmissionController;
-use App\Http\Controllers\BlogController;
+use App\Http\Controllers\User\ContestController;
+use App\Http\Controllers\User\CountryController;
+use App\Http\Controllers\User\ProblemController;
+use App\Http\Controllers\User\UserController;
+use App\Http\Controllers\User\ContestRatingController;
+use App\Http\Controllers\User\StandingController;
+use App\Http\Controllers\User\SubmissionController;
+use App\Http\Controllers\User\BlogController;
+
+use App\Http\Controllers\Admin\FileController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Admin\ImageController as AdminImageController;
 use App\Http\Controllers\Admin\BlogController as AdminBlogController;
 use App\Http\Controllers\Admin\ContestController as AdminContestController;
 use App\Http\Controllers\Admin\ProblemController as AdminProblemController;
-use App\Models\ContestType;
-use App\Models\User;
-use Illuminate\Support\Facades\Route;
+
+use App\Http\Controllers\Internal\TestCaseDownloadController;
 
 /*
 |--------------------------------------------------------------------------
@@ -36,63 +41,103 @@ Route::get('/', function () {
     return view('welcome');
 });
 
+
 Route::prefix('auth')->group(function () {
+
     Route::post('/signup', [AuthController::class, 'signup']);
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/refresh', [AuthController::class, 'refresh']);
+
 });
 
+
 Route::middleware('auth:sanctum')->prefix('auth')->group(function () {
+
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/activity', [AuthController::class, 'user_activity']);
+
 });
 
+
 Route::group(['prefix' => '/email'], function () {
+
     Route::get('/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])->middleware(['signed'])->name('verification.verify');
     Route::post('/resend', [EmailVerificationController::class, 'resend'])->middleware(['auth:sanctum', 'throttle:6,1'])->name('verification.resend');
+
 });
+
 
 Route::post('/locale', [LocalizationController::class, 'setLocale'])->name('api.locale.set');
 
+
 Route::get('/countries', [CountryController::class, 'index'])->name('api.countries.index');
 
+
 Route::group(['prefix' => '/blogs'], function () {
+
     Route::get('/', [BlogController::class, 'index']);
+
 });
 
-Route::get('/contests', [ContestController::class, 'index']);
-Route::group(['prefix' => '/contest/{contest}'], function () {
-    Route::post('/register', [ContestController::class, 'register'])->middleware(['auth:sanctum', 'verified']);
-    Route::post('/unregister', [ContestController::class, 'unregister'])->middleware(['auth:sanctum', 'verified']);
-    Route::get('/problems', [ContestController::class, 'problems']);
-    Route::get('/problem/{problemId}/user/{user}', [ContestController::class, 'getContestProblemSubmissions']);
-    Route::get('/standings', [StandingController::class, 'getByContest']);
+
+Route::prefix('contests')->group(function () {
+    
+    Route::get('/', [ContestController::class, 'index']);
+
+    Route::prefix('{contest}')->group(function () {
+
+        Route::middleware(['can:view,contest'])->group(function () {
+            Route::get('/', [ContestController::class, 'show']);
+            Route::get('/submit', [ContestController::class, 'submit']);
+            Route::get('/standings', [StandingController::class, 'getByContest']);
+            Route::get('/problem/{problem}/user/{user}', [ContestController::class, 'getContestProblemSubmissions']);
+        });
+
+        Route::middleware(['auth:sanctum', 'verified', 'can:view,contest'])->group(function () {
+            Route::post('/register', [ContestController::class, 'register']);
+            Route::post('/unregister', [ContestController::class, 'unregister']);
+        });
+
+    });
 });
 
-Route::group(['prefix' => '/problemset'], function () {
+
+Route::prefix('problems')->group(function () {
+
     Route::get('/', [ProblemController::class, 'index']);
-    Route::get('/problem/{contest}/{char}', [ProblemController::class, 'getByChar']);
-    Route::get('/problem/{contest}/{char}/attachments', [ProblemController::class, 'getAttachments']);
-    Route::get('/standings', [StandingController::class, 'usersProblemStandings']);
-    Route::post('/problem/{contest}/{char}/submit', [SubmissionController::class, 'store'])->middleware(['auth:sanctum', 'verified']);
+
+    Route::prefix('problem/{contest}/{char}')->middleware(['can:view,contest'])->group(function () {
+        Route::get('/', [ProblemController::class, 'show']);
+        Route::get('/attachments', [ProblemController::class, 'getAttachments']);
+    });
+
+    Route::get('/standings', [ProblemController::class, 'standings']);
+
 });
 
-Route::group(['prefix' => '/submissions'], function () {
+
+Route::prefix('submissions')->group(function () {
+
     Route::get('/', [SubmissionController::class, 'index']);
-    Route::get('/problem/{contestProblem}', [SubmissionController::class, 'getByProblem']);
-    Route::get('/submission/{submission}', [SubmissionController::class, 'getById']);
+    Route::get('/submission/{submission}', [SubmissionController::class, 'show'])->middleware(['can:view,submission']);
+    Route::post('/problem/{code}/submit', [SubmissionController::class, 'store'])->middleware(['auth:sanctum', 'verified']);
+    
 });
 
-Route::group(['prefix' => '/profile/{username}'], function () {
-    Route::get('/', [ProfileController::class, 'show']);
-    Route::get('/submissions', [ProfileController::class, 'submissions']);
-    Route::get('/ratings', [ProfileController::class, 'ratings']);
-    Route::get('/edit', [ProfileController::class, 'edit'])->middleware(['auth:sanctum', 'verified']);
-    Route::post('/update', [ProfileController::class, 'update'])->middleware(['auth:sanctum', 'verified']);
+
+Route::group(['prefix' => '/profile/{handle}'], function () {
+
+    Route::get('/', [UserController::class, 'show']);
+    Route::get('/submissions', [UserController::class, 'submissions']);
+    Route::get('/ratings', [UserController::class, 'ratings']);
+    Route::get('/edit', [UserController::class, 'edit'])->middleware(['auth:sanctum', 'verified']);
+    Route::post('/update', [UserController::class, 'update'])->middleware(['auth:sanctum', 'verified']);
+
 });
 
-Route::get('/ratings', [RatingController::class, 'index']);
+
+Route::get('/ratings', [ContestRatingController::class, 'index']);
 
 // Admin
 Route::group(['prefix' => '/admin', 'middleware' => 'admin'], function () {
@@ -131,7 +176,7 @@ Route::group(['prefix' => '/admin', 'middleware' => 'admin'], function () {
             Route::post('/', [AdminContestController::class, 'update']);
             Route::delete('/delete', [AdminContestController::class, 'destroy']);
             Route::post('/notify', [AdminContestController::class, 'notifyUsers']);
-            Route::get('/add/ratings', [RatingController::class, 'store']);
+            Route::get('/add/ratings', [ContestRatingController::class, 'store']);
 
             Route::get('/problems', [AdminProblemController::class, 'index']);
             Route::group(['prefix' => '/problem'], function () {
@@ -143,4 +188,8 @@ Route::group(['prefix' => '/admin', 'middleware' => 'admin'], function () {
             });
         });
     });
+});
+
+Route::group(['prefix' => 'internal', 'middleware' => 'internal'], function () {
+    Route::get('/test-cases/{problem}', [TestCaseDownloadController::class, 'download'])->name('internal.test-cases.download');
 });

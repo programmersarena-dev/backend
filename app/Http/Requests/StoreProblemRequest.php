@@ -30,6 +30,8 @@ class StoreProblemRequest extends FormRequest
             'test_cases' => 'required|file|mimes:zip',
             'note' => 'nullable|string',
 
+            'difficulty' => 'nullable|integer|min:1',
+
             'name_en' => 'required|string|max:255',
             'note_en' => 'nullable|string',
             'name_ru' => 'required|string|max:255',

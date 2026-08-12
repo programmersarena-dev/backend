@@ -15,6 +15,7 @@ return new class extends Migration {
 
             $table->foreignId('user_id')->constrained()->onDelete('restrict');
             $table->foreignId('problem_id')->constrained()->onDelete('restrict');
+            $table->foreignId('contest_id')->nullable()->constrained()->nullOnDelete();
 
             $table->string('language', 20);
             $table->string('status', 30)->default('Queued');

@@ -30,6 +30,10 @@ class UpdateProblemRequest extends FormRequest
             'test_cases' => 'nullable|file|mimes:zip',
             'note' => 'nullable|string',
 
+            // Kept identical to StoreProblemRequest's placeholder — see the
+            // note there. Update both together once the real scale is set.
+            'difficulty' => 'nullable|integer|min:1',
+
             'name_en' => 'required|string|max:255',
             'note_en' => 'nullable|string',
             'name_ru' => 'required|string|max:255',

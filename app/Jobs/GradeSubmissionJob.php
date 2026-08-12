@@ -32,7 +32,6 @@ class GradeSubmissionJob implements ShouldQueue
 
     public function handle()
     {
-        // Eager load problem and contest relationships safely
         $submission = Submission::with('problem.contest')->find($this->submissionId);
         if (!$submission) {
             return;
@@ -44,7 +43,6 @@ class GradeSubmissionJob implements ShouldQueue
         $contest = $problem->contest;
         $isIOI = $contest && optional($contest->type)->name === 'IOI';
 
-        // Fix: Defensive stripping of double-serialized wrapping quotes from the DB code string
         $sourceCode = $submission->code;
         if (str_starts_with($sourceCode, '"') && str_ends_with($sourceCode, '"')) {
             $decoded = json_decode($sourceCode);
@@ -53,12 +51,15 @@ class GradeSubmissionJob implements ShouldQueue
             }
         }
 
-        // Get extension configuration
         $extension = config("languages.dockerLanguages.{$this->languageKey}.extension", 'txt');
 
-        // Base job structure
+        // Version token used by the Node judge worker to invalidate disk cache when test cases change
+        $testCasesVersion = $problem->test_cases_version ?? md5($problem->test_cases_path . '_' . ($problem->updated_at ?? ''));
+
         $job = [
             'id' => "sub-{$submission->id}-" . uniqid(),
+            'problem_id' => $problem->id,
+            'test_cases_version' => $testCasesVersion,
             'language' => $this->languageKey,
             'version' => $this->version,
             'files' => [
@@ -74,20 +75,24 @@ class GradeSubmissionJob implements ShouldQueue
         $problemFolder = storage_path('app/public/' . $problem->test_cases_path);
 
         if ($isIOI) {
-            // IOI Logic: Process test cases grouped inside subtask folders using points.json maps
             $pointsFile = "{$problemFolder}/points.json";
             $points = file_exists($pointsFile) ? json_decode(file_get_contents($pointsFile), true) : [];
 
             foreach ($points as $index => $pointValue) {
-                $testCases = glob("{$problemFolder}/tests/{$index}*.in");
+                $testCases = glob("{$problemFolder}/tests/{$index}_*.in");
                 natsort($testCases);
 
                 $tests = [];
                 foreach ($testCases as $testCaseFile) {
                     $expectedOutputFile = str_replace('.in', '.out', $testCaseFile);
+
+                    // Compute relative path within the zip archive (e.g. "tests/0_1.in")
+                    $inputFileRelative = ltrim(str_replace($problemFolder, '', $testCaseFile), '/\\');
+                    $outputFileRelative = ltrim(str_replace($problemFolder, '', $expectedOutputFile), '/\\');
+
                     $tests[] = [
-                        'input' => file_get_contents($testCaseFile),
-                        'expected_output' => file_exists($expectedOutputFile) ? file_get_contents($expectedOutputFile) : ''
+                        'input_file' => $inputFileRelative,
+                        'expected_output_file' => $outputFileRelative,
                     ];
                 }
 
@@ -98,16 +103,20 @@ class GradeSubmissionJob implements ShouldQueue
                 ];
             }
         } else {
-            // Standard Logic: Collect sequential flat files into index 0 parent wrapper
             $testCases = glob("{$problemFolder}/*.in");
             natsort($testCases);
 
             $tests = [];
             foreach ($testCases as $testCaseFile) {
                 $expectedOutputFile = str_replace('.in', '.out', $testCaseFile);
+
+                // Compute relative path within the zip archive (e.g. "1.in")
+                $inputFileRelative = ltrim(str_replace($problemFolder, '', $testCaseFile), '/\\');
+                $outputFileRelative = ltrim(str_replace($problemFolder, '', $expectedOutputFile), '/\\');
+
                 $tests[] = [
-                    'input' => file_get_contents($testCaseFile),
-                    'expected_output' => file_exists($expectedOutputFile) ? file_get_contents($expectedOutputFile) : ''
+                    'input_file' => $inputFileRelative,
+                    'expected_output_file' => $outputFileRelative,
                 ];
             }
 
@@ -118,7 +127,6 @@ class GradeSubmissionJob implements ShouldQueue
             ];
         }
 
-        // Push serialized structural job details to Redis queue
         try {
             Redis::lpush('judge:jobs', json_encode($job));
         } catch (\Exception $e) {

@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\User;
 use App\Models\Problem;
+use App\Models\Submission;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -11,6 +12,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class SubmissionFactory extends Factory
 {
+    protected $model = Submission::class;
+
     /**
      * Define the model's default state.
      *
@@ -19,18 +22,23 @@ class SubmissionFactory extends Factory
     public function definition(): array
     {
         $status = $this->faker->randomElement([
-            'Accepted',
+            'AC',
             'WA',
-            'TL',
-            'ML',
+            'TLE',
+            'MLE',
             'RE',
-            'CE'
+            'CE',
         ]);
 
+        $isAc = $status === 'AC';
+        $isCe = $status === 'CE';
+
         return [
-            // Safe relationship references that won't break if table sequences have gaps
             'user_id' => User::factory(),
             'problem_id' => Problem::factory(),
+            'contest_id' => function (array $attributes) {
+                return Problem::find($attributes['problem_id'])?->contest_id;
+            },
 
             'language' => $this->faker->randomElement(['gcc-10', 'g++-20', 'python-3.11', 'rust-1.75']),
             'status' => $status,
@@ -38,9 +46,6 @@ class SubmissionFactory extends Factory
             'code' => <<<'CPP'
                 #include <bits/stdc++.h>
                 using namespace std;
-
-                using ll = long long;
-                #define all(x) begin(x), end(x)
 
                 int main() {
                     ios_base::sync_with_stdio(0);
@@ -54,33 +59,41 @@ class SubmissionFactory extends Factory
                 }
                 CPP,
 
-            // Passed as a native array to cleanly trigger Eloquent's built-in array cast
-            'outputs' => $status !== 'Compilation Error' && $status !== 'Queued' ? [
+            // Subtask structure matching competition judging engines (e.g. IOI / CP)
+            'outputs' => !$isCe ? [
                 [
-                    'input' => '1',
-                    'output' => $status === 'Accepted' ? '1' : '0',
-                    'expected_output' => '1',
-                    'log' => $status === 'Accepted' ? 'OK' : 'Wrong Answer',
-                    'time' => $this->faker->numberBetween(5, 150),
-                    'memory' => $this->faker->numberBetween(1024, 4096),
+                    'index' => 0,
+                    'points' => $isAc ? 100 : 0,
+                    'tests' => [
+                        [
+                            'status' => $isAc ? 'OK' : $status,
+                            'input' => '1',
+                            'output' => $isAc ? '1' : '0',
+                            'expected_output' => '1',
+                            'time_used_ms' => $this->faker->numberBetween(5, 150),
+                            'memory_used_kb' => $this->faker->numberBetween(1024, 4096),
+                            'log' => $isAc ? 'OK' : ($status === 'WA' ? 'Wrong Answer' : $status),
+                        ],
+                        [
+                            'status' => $isAc ? 'OK' : $status,
+                            'input' => '2',
+                            'output' => $isAc ? '2' : '0',
+                            'expected_output' => '2',
+                            'time_used_ms' => $this->faker->numberBetween(5, 150),
+                            'memory_used_kb' => $this->faker->numberBetween(1024, 4096),
+                            'log' => $isAc ? 'OK' : ($status === 'WA' ? 'Wrong Answer' : $status),
+                        ],
+                    ],
                 ],
-                [
-                    'input' => '2',
-                    'output' => $status === 'Accepted' ? '2' : '0',
-                    'expected_output' => '2',
-                    'log' => $status === 'Accepted' ? 'OK' : 'Wrong Answer',
-                    'time' => $this->faker->numberBetween(5, 150),
-                    'memory' => $this->faker->numberBetween(1024, 4096),
-                ]
             ] : null,
 
-            'output' => $status === 'Accepted' ? "1\n2\n" : "0\n0\n",
-            'error_message' => $status === 'Compilation Error' ? 'error: expected ‘;’ before ‘return’' : null,
+            'output' => $isAc ? "1\n2\n" : "0\n0\n",
+            'error_message' => $isCe ? 'error: expected ‘;’ before ‘return’' : null,
 
-            'time' => $status !== 'Queued' ? $this->faker->numberBetween(10, 300) : null,
-            'memory' => $status !== 'Queued' ? $this->faker->numberBetween(2048, 8192) : null,
+            'time' => !$isCe ? $this->faker->numberBetween(10, 300) : null,
+            'memory' => !$isCe ? $this->faker->numberBetween(2048, 8192) : null,
 
-            'judged_at' => $status !== 'Queued' ? $this->faker->dateTimeBetween('-1 month', 'now') : null,
+            'judged_at' => $this->faker->dateTimeBetween('-1 month', 'now'),
             'created_at' => $this->faker->dateTimeBetween('-1 month', 'now'),
         ];
     }

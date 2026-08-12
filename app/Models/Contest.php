@@ -71,7 +71,7 @@ class Contest extends Model
 
     public function standings(): HasOne
     {
-        return $this->hasOne(Standing::class);
+        return $this->hasOne(ContestStanding::class);
     }
 
     /*
@@ -106,6 +106,21 @@ class Contest extends Model
     /**
      * Get a problem by alphabetical index (A, B, C, ...).
      */
+
+    public function acceptableLanguages(): array
+    {
+        $languages = [];
+        $dockerLanguages = config('languages.dockerLanguages', []);
+
+        foreach ($dockerLanguages as $language => $details) {
+            foreach ($details['versions'] ?? [] as $version) {
+                $languages[] = "{$language}-{$version}";
+            }
+        }
+
+        return $languages;
+    }
+    
     public function getProblemByCharacter(string $char): ?Problem
     {
         $offset = ord(strtoupper($char)) - ord('A');
@@ -113,6 +128,22 @@ class Contest extends Model
             ->orderBy('id')
             ->offset($offset)
             ->first();
+    }
+
+    public function status(): Attribute
+    {
+        return Attribute::make(
+            get: function () {
+                $now = Carbon::now();
+                if ($this->start_date > $now) {
+                    return 'Pending';
+                }
+                if ($this->end_date >= $now) {
+                    return 'Active';
+                }
+                return 'Ended';
+            }
+        )->shouldCache();
     }
 
     /**
