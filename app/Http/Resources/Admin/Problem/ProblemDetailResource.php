@@ -2,7 +2,7 @@
 
 namespace App\Http\Resources\Admin\Problem;
 
-use App\Http\Resources\SubmissionResource;
+use App\Http\Resources\Admin\Submission\SubmissionListResource;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Storage;
@@ -45,7 +45,7 @@ class ProblemDetailResource extends JsonResource
                 'note' => $this->getTranslation('note') ?? '',
             ]),
 
-            'user_submissions' => SubmissionResource::collection(
+            'user_submissions' => SubmissionListResource::collection(
                 $this->whenLoaded('userSubmissions')
             ),
         ];

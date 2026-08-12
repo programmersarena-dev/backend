@@ -19,23 +19,35 @@ use App\Models\Submission;
 use App\Http\Resources\User\Contest\ContestListResource;
 use App\Http\Resources\User\Contest\ContestDetailResource;
 use App\Http\Resources\User\Problem\ProblemListResource;
-use App\Http\Resources\SubmissionResource;
+use App\Http\Resources\User\Submission\SubmissionListResource;
 
 class ContestController extends Controller
 {
     public function index(): AnonymousResourceCollection
     {
-        $paginatedContests = Contest::query()
-            ->where('active', true)
-            ->with([
-                'type',
-                'authors:id,name',
-                'participants:id,name'
-            ])
-            ->orderBy('start_date', 'desc')
-            ->paginate(20);
+        $now = now();
+    // Look back up to 24 hours for ongoing contests
+    $activeBuffer = now()->subHours(24);
 
-        return ContestListResource::collection($paginatedContests);
+    $paginatedContests = Contest::query()
+        ->where('active', true)
+        ->with([
+            'type',
+            'authors:id,name',
+            'participants:id,name'
+        ])
+        ->orderByRaw("
+            CASE 
+                -- Active/Ongoing or Upcoming
+                WHEN start_date >= ? THEN 1
+                -- Finished (started more than 24h ago)
+                ELSE 2
+            END ASC
+        ", [$activeBuffer])
+        ->orderBy('start_date', 'asc')
+        ->paginate(20);
+
+    return ContestListResource::collection($paginatedContests);
     }
 
     public function show(Contest $contest): array
@@ -249,6 +261,6 @@ class ContestController extends Controller
             ->whereBetween('created_at', [$contest->start_date, $contest->end_date])
             ->get();
 
-        return SubmissionResource::collection($submissions);
+        return SubmissionListResource::collection($submissions);
     }
 }

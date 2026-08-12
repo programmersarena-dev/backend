@@ -6,6 +6,7 @@ use App\Models\Problem;
 use App\Models\Submission;
 use App\Models\User;
 use Illuminate\Auth\Access\Response;
+use Illuminate\Support\Facades\Auth;
 
 class SubmissionPolicy
 {
@@ -40,6 +41,7 @@ class SubmissionPolicy
      */
     public function view(?User $user, Submission $submission): Response
     {
+        $user = $user ?? Auth::user();
         $contest = $submission->problem?->contest;
         $isContestEnded = $contest?->status === 'Ended';
         $isOwner = $user && $submission->user_id === $user->id;

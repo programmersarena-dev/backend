@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\ContestDetailResource;
+use App\Http\Resources\User\Contest\ContestDetailResource;
 use App\Http\Resources\UserResource;
 use App\Models\Contest;
 use App\Models\User;

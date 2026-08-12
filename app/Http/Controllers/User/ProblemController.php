@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -16,6 +17,7 @@ use App\Models\Problem;
 use App\Http\Resources\User\Problem\ProblemListResource;
 use App\Http\Resources\User\Problem\ProblemDetailResource;
 use App\Http\Resources\User\Contest\ContestDetailResource;
+use App\Http\Resources\User\Submission\SubmissionListResource;
 use App\Http\Resources\User\UserResource;
 
 class ProblemController extends Controller
@@ -76,10 +78,13 @@ class ProblemController extends Controller
     public function show(Contest $contest, $char)
     {
         $problem = $contest->getProblemByCharacter($char);
-        
+        $user = Auth::guard('sanctum')->user() ?? null;
+        $submissions = $user ? Submission::where('problem_id', $problem->id)->where('user_id', $user->id)->limit(5)->get() : collect([]);
+
         return [
             'contest' => new ContestDetailResource($contest),
             'problem' => new ProblemDetailResource($problem),
+            'submissions' => SubmissionListResource::collection($submissions)
         ];
     }
 

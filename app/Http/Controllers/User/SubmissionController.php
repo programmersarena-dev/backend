@@ -104,4 +104,12 @@ class SubmissionController extends Controller
 
         return response()->json(['message' => __('messages.submission_success')], 201);
     }
+
+    public function status(Submission $submission): JsonResponse
+    {
+        if (!$submission) {
+            return response()->json(['message' => __('messages.submission_not_found')], 404);
+        }
+        return response()->json(['status' => $submission->status]);
+    }
 }

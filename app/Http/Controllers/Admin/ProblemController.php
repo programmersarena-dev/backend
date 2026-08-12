@@ -50,14 +50,13 @@ class ProblemController extends Controller
             return response()->json(['message' => 'Zip faýly açmakda ýalňyşlyk ýüze çykdy'], 500);
         }
 
+        $code = strtoupper(Str::random(3)) . '-' . rand(100, 999);
+
         $problem = Problem::create([
             'contest_id' => $contest->id,
+            'code' => $code,
             'slug' => $this->generateUniqueSlug($data['name']),
             'name' => $data['name'],
-            // The frontend already sends tags as a JSON.stringify'd string
-            // (matches the 'nullable|string' validation rule), so this is
-            // already valid JSON text — encoding it again here would
-            // double-encode it into an escaped string-within-a-string.
             'tags' => $data['tags'] ?? null,
             'time_limit' => $data['time_limit'],
             'memory_limit' => $data['memory_limit'],
@@ -102,6 +101,7 @@ class ProblemController extends Controller
         return [
             'id' => $problem->id,
             'contest_id' => $problem->contest_id,
+            'code' => $problem->code,
             'name' => $problem->name,
             'tags' => $problem->tags,
             'time_limit' => $problem->time_limit,
@@ -111,8 +111,6 @@ class ProblemController extends Controller
             'description' => $problem->description,
             'input' => $problem->input,
             'output' => $problem->output,
-            // Server storage path is intentionally not exposed to the client.
-            'test_cases' => '',
             'note' => $problem->note,
 
             "name_en" => $problem->getTranslation("name", "en"),

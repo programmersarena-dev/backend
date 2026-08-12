@@ -107,7 +107,7 @@ Route::prefix('problems')->group(function () {
 
     Route::get('/', [ProblemController::class, 'index']);
 
-    Route::prefix('problem/{contest}/{char}')->middleware(['can:view,contest'])->group(function () {
+    Route::prefix('problem/{contest}/{char}')->middleware(['auth:sanctum','can:view,contest'])->group(function () {
         Route::get('/', [ProblemController::class, 'show']);
         Route::get('/attachments', [ProblemController::class, 'getAttachments']);
     });
@@ -120,7 +120,8 @@ Route::prefix('problems')->group(function () {
 Route::prefix('submissions')->group(function () {
 
     Route::get('/', [SubmissionController::class, 'index']);
-    Route::get('/submission/{submission}', [SubmissionController::class, 'show'])->middleware(['can:view,submission']);
+    Route::get('/submission/{submission}', [SubmissionController::class, 'show'])->middleware(['auth:sanctum', 'can:view,submission']);
+    Route::get('/submission/{submission}/status', [SubmissionController::class, 'status'])->middleware(['auth:sanctum', 'can:view,submission']);
     Route::post('/problem/{code}/submit', [SubmissionController::class, 'store'])->middleware(['auth:sanctum', 'verified']);
     
 });
