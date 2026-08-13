@@ -34,13 +34,13 @@ class SubmissionFactory extends Factory
         $isCe = $status === 'CE';
 
         return [
-            'user_id' => User::factory(),
-            'problem_id' => Problem::factory(),
+            'user_id' => User::inRandomOrder()->take(1)->first()->id,
+            'problem_id' => Problem::inRandomOrder()->take(1)->first()->id,
             'contest_id' => function (array $attributes) {
                 return Problem::find($attributes['problem_id'])?->contest_id;
             },
 
-            'language' => $this->faker->randomElement(['gcc-10', 'g++-20', 'python-3.11', 'rust-1.75']),
+            'language' => $this->faker->randomElement(['gcc-10']),
             'status' => $status,
 
             'code' => <<<'CPP'
@@ -48,9 +48,6 @@ class SubmissionFactory extends Factory
                 using namespace std;
 
                 int main() {
-                    ios_base::sync_with_stdio(0);
-                    cin.tie(0);
-
                     int n;
                     if (cin >> n) {
                         cout << n << "\n";

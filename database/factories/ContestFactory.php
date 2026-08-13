@@ -16,7 +16,7 @@ class ContestFactory extends Factory
      */
     public function definition(): array
     {
-        $startDate = $this->faker->boolean(2)
+        $startDate = $this->faker->boolean(5)
             ? $this->faker->dateTimeBetween('+1 day', '+7 days')
             : $this->faker->dateTimeBetween('-60 days', '-1 day');
 

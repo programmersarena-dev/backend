@@ -26,28 +26,27 @@ class ContestController extends Controller
     public function index(): AnonymousResourceCollection
     {
         $now = now();
-    // Look back up to 24 hours for ongoing contests
-    $activeBuffer = now()->subHours(24);
+        $activeBuffer = now()->subHours(24);
 
-    $paginatedContests = Contest::query()
-        ->where('active', true)
-        ->with([
-            'type',
-            'authors:id,name',
-            'participants:id,name'
-        ])
-        ->orderByRaw("
-            CASE 
-                -- Active/Ongoing or Upcoming
-                WHEN start_date >= ? THEN 1
-                -- Finished (started more than 24h ago)
-                ELSE 2
-            END ASC
-        ", [$activeBuffer])
-        ->orderBy('start_date', 'asc')
-        ->paginate(20);
+        $paginatedContests = Contest::query()
+            ->where('active', true)
+            ->with([
+                'type',
+                'authors:id,name',
+                'participants:id,name'
+            ])
+            ->orderByRaw("
+                CASE 
+                    -- Active/Ongoing or Upcoming
+                    WHEN start_date >= ? THEN 1
+                    -- Finished (started more than 24h ago)
+                    ELSE 2
+                END ASC
+            ", [$activeBuffer])
+            ->orderBy('start_date', 'asc')
+            ->paginate(20);
 
-    return ContestListResource::collection($paginatedContests);
+        return ContestListResource::collection($paginatedContests);
     }
 
     public function show(Contest $contest): array
@@ -170,8 +169,7 @@ class ContestController extends Controller
                     ]);
 
                     // Add both users to standings (if not already present)
-                    $contest->standings->addUserStanding($user->name, 'Duel');
-                    $contest->standings->addUserStanding($opponent->name, 'Duel');
+                    app(StandingService::class)->addUserStanding($contest->standings, [$user->name, $opponent->name]);
 
                     return response()->json(['message' => __('contest.registered_duel_accepted')], 200);
                 }
@@ -183,7 +181,7 @@ class ContestController extends Controller
                 ]);
 
                 // Add only the current user to standings (opponent will be added when they accept)
-                $contest->standings->addUserStanding($user->name, 'Duel');
+                app(StandingService::class)->addUserStanding($contest->standings, $user->name);
 
                 return response()->json(['message' => __('contest.registered_waiting')], 202);
             });

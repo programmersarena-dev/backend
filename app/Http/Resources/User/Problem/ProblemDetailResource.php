@@ -13,8 +13,8 @@ class ProblemDetailResource extends JsonResource
     {
         $contestStatus = $this->contest?->getStatus();
 
-        $tags = ($contestStatus === 'Ended' || !$this->contest_id)
-            ? $this->whenLoaded('tags', fn() => $this->tags->pluck('name'))
+        $tags = ($contestStatus === 'Ended' || $this->contest_id)
+            ? is_array($this->tags) ? $this->tags : json_decode($this->tags, true)
             : [];
 
         $statementUrl = null;

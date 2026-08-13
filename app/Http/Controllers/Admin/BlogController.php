@@ -11,7 +11,7 @@ use App\Models\BlogTranslation;
 use App\Http\Requests\StoreBlogRequest;
 use App\Http\Requests\UpdateBlogRequest;
 
-use App\Http\Resources\BlogResource;
+use App\Http\Resources\Admin\BlogResource;
 
 class BlogController extends Controller
 {

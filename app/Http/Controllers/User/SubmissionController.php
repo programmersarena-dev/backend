@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Redis;
+
 
 use App\Models\Contest;
 use App\Models\Problem;
@@ -110,6 +112,63 @@ class SubmissionController extends Controller
         if (!$submission) {
             return response()->json(['message' => __('messages.submission_not_found')], 404);
         }
-        return response()->json(['status' => $submission->status]);
+ 
+        // Already resolved — no reason to touch Redis for a submission
+        // that's already Accepted/WA/CE/etc.
+        if (!$submission->isPending()) {
+            return response()->json(['status' => $submission->status]);
+        }
+ 
+        $liveStatus = $this->resolveLiveStatusFromRedis($submission);
+ 
+        return response()->json(['status' => $liveStatus ?? $submission->status]);
+    }
+ 
+    /**
+     * Checks the daemon's own in-flight Redis state for a more accurate
+     * status than the DB column can give while a submission is pending —
+     * the DB only gets updated once ListenJudgeResults processes the
+     * final result, so a submission that's actively being judged right
+     * now can look identical to one that's still sitting untouched in
+     * the queue if you only look at the `status` column.
+     */
+    private function resolveLiveStatusFromRedis(Submission $submission): ?string
+    {
+        $jobPrefix = "sub-{$submission->id}-";
+ 
+        // Currently being processed by some worker right now?
+        // judge:jobs:processing_at is bounded by "jobs in flight across
+        // the whole fleet right now" (small — at most one per active
+        // worker), so a full HGETALL here is cheap and avoids relying on
+        // HSCAN's exact return shape, which differs subtly between the
+        // phpredis and predis drivers.
+        $processing = Redis::hgetall('judge:jobs:processing_at');
+        foreach (array_keys($processing) as $jobId) {
+            if (str_starts_with($jobId, $jobPrefix)) {
+                return Submission::STATUS_JUDGING;
+            }
+        }
+ 
+        // Still sitting in the main queue, not yet picked up by any
+        // worker? judge:jobs can be much deeper than processing_at
+        // during a submission rush, so this is an O(queue depth) scan —
+        // fine for occasional per-submission status checks, but if
+        // queue depth regularly gets into the thousands this is worth
+        // replacing with a side-index (e.g. a small
+        // judge:jobs:by-submission:{id} key set at enqueue time in
+        // GradeSubmissionJob and cleared once a worker picks the job
+        // up) for an O(1) lookup instead.
+        $queued = Redis::lrange('judge:jobs', 0, -1);
+        foreach ($queued as $raw) {
+            $job = json_decode($raw, true);
+            if (($job['id'] ?? null) && str_starts_with($job['id'], $jobPrefix)) {
+                return Submission::STATUS_IN_QUEUE;
+            }
+        }
+ 
+        // Not found in either place — either it hasn't been enqueued
+        // yet, or it already finished and the DB status (returned by
+        // the caller) is authoritative.
+        return null;
     }
 }

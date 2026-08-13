@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Auth;
 
+use App\Models\ContestRating;
+
 class ContestListResource extends JsonResource
 {
     /**
@@ -68,6 +70,7 @@ class ContestListResource extends JsonResource
             'subtasks' => (bool) $this->hasSubtasks(),
             'status' => $this->getStatus(),
             'is_registered' => $user ? (bool) $this->isUserRegistered($user->id) : false,
+            'is_added_ratings' => ContestRating::where('contest_id', $this->id)->exists(),
         ];
 
         if ($user && $user->user_type === 'admin') {

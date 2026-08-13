@@ -12,11 +12,11 @@ class ProblemListResource extends JsonResource
         $contestStatus = $this->contest?->status;
 
         $tags = ($contestStatus === 'Ended' || $this->contest_id)
-            ? $this->tags
+            ? is_array($this->tags) ? $this->tags : json_decode($this->tags, true)
             : [];
 
         $acceptedProblemsCount = $this->submissions
-            ->whereIn('status', ['Accepted', '100'])
+            ->whereIn('status', ['AC', '100'])
             ->unique('problem_id')
             ->count();
 

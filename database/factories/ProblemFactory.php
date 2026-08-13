@@ -29,7 +29,7 @@ class ProblemFactory extends Factory
         $name = fake()->unique()->words(rand(2, 4), true);
 
         return [
-            'contest_id' => Contest::factory(),
+            'contest_id' => null,
             'code' => strtoupper(fake()->unique()->bothify('???-###')),
             'slug' => Str::slug($name),
             'name' => ucfirst($name),

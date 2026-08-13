@@ -13,7 +13,7 @@ use App\Http\Controllers\User\CountryController;
 use App\Http\Controllers\User\ProblemController;
 use App\Http\Controllers\User\UserController;
 use App\Http\Controllers\User\ContestRatingController;
-use App\Http\Controllers\User\StandingController;
+use App\Http\Controllers\User\ContestStandingController;
 use App\Http\Controllers\User\SubmissionController;
 use App\Http\Controllers\User\BlogController;
 
@@ -23,6 +23,7 @@ use App\Http\Controllers\Admin\ImageController as AdminImageController;
 use App\Http\Controllers\Admin\BlogController as AdminBlogController;
 use App\Http\Controllers\Admin\ContestController as AdminContestController;
 use App\Http\Controllers\Admin\ProblemController as AdminProblemController;
+use App\Http\Controllers\Admin\SubmissionController as AdminSubmissionController;
 
 use App\Http\Controllers\Internal\TestCaseDownloadController;
 
@@ -90,7 +91,7 @@ Route::prefix('contests')->group(function () {
         Route::middleware(['can:view,contest'])->group(function () {
             Route::get('/', [ContestController::class, 'show']);
             Route::get('/submit', [ContestController::class, 'submit']);
-            Route::get('/standings', [StandingController::class, 'getByContest']);
+            Route::get('/standings', [ContestStandingController::class, 'show']);
             Route::get('/problem/{problem}/user/{user}', [ContestController::class, 'getContestProblemSubmissions']);
         });
 
@@ -175,6 +176,7 @@ Route::group(['prefix' => '/admin', 'middleware' => 'admin'], function () {
         Route::group(['prefix' => '/{contest}'], function () {
             Route::get('/', [AdminContestController::class, 'edit']);
             Route::post('/', [AdminContestController::class, 'update']);
+            Route::post('/recheck-all-submissions', [AdminSubmissionController::class, 'recheckAllSubmssionsInContest']);
             Route::delete('/delete', [AdminContestController::class, 'destroy']);
             Route::post('/notify', [AdminContestController::class, 'notifyUsers']);
             Route::get('/add/ratings', [ContestRatingController::class, 'store']);
@@ -182,6 +184,7 @@ Route::group(['prefix' => '/admin', 'middleware' => 'admin'], function () {
             Route::get('/problems', [AdminProblemController::class, 'index']);
             Route::group(['prefix' => '/problem'], function () {
                 Route::post('/add', [AdminProblemController::class, 'store']);
+                Route::post('/{char}/recheck-all-submissions', [AdminSubmissionController::class, 'recheckAllSubmssionsInProblem']);
                 Route::get('/{char}', [AdminProblemController::class, 'edit']);
                 Route::post('/{char}', [AdminProblemController::class, 'update']);
                 Route::delete('/{char}/delete', [AdminProblemController::class, 'destroy']);

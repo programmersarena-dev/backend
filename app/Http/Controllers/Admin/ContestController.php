@@ -7,6 +7,7 @@ use Carbon\Carbon;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Notification;
 use App\Notifications\ContestNotification;
+use Illuminate\Http\Request;
 
 use App\Models\Contest;
 use App\Models\ContestType;
@@ -24,11 +25,12 @@ class ContestController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
         $now = Carbon::now('UTC');
 
-        $contests = Contest::orderBy('start_date', 'desc')->get();
+        $searchName = $request->query('searchName', '');
+        $contests = Contest::where(fn($q) => $q->where('name', 'like', '%' . $searchName . '%'))->orderBy('start_date', 'desc')->get();
 
         $contests->each(function ($contest) use ($now) {
             $contest->status = $contest->end_date < $now ? 'ended' : ($now < $contest->start_date ? 'notStarted' : 'started');

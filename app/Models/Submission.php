@@ -114,6 +114,7 @@ class Submission extends Model
         'memory',
         'error_message',
         'judged_at',
+        'created_at',
     ];
 
     protected $casts = [

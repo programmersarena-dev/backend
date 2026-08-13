@@ -3,21 +3,23 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\User\Contest\ContestDetailResource;
 use App\Http\Resources\UserResource;
-use App\Models\Contest;
-use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 
-class StandingController extends Controller
+use App\Models\Contest;
+use App\Models\User;
+
+use App\Http\Resources\User\Contest\ContestDetailResource;
+
+class ContestStandingController extends Controller
 {
     /**
      * Get contest standings table with optional official user filtering.
      */
-    public function getByContest(Contest $contest, Request $request): JsonResponse|array
+    public function show(Contest $contest, Request $request): JsonResponse|array
     {
         if ($contest->getStatus() === 'notStarted') {
             return response()->json(['error' => 'Bäsleşik başlamady'], 403);
@@ -31,14 +33,7 @@ class StandingController extends Controller
         $contest->loadMissing('standings');
         $standingsData = $contest->standings;
         $standings = $standingsData->result ?? [];
-
-        // `result` can come back as a raw JSON string rather than a
-        // decoded array (depends on whether Standing casts it) — decode
-        // it here once, up front, so every path below (including the
-        // hasSubtasks() foreach, which was throwing "foreach() argument
-        // must be of type array|object, string given" whenever the
-        // official-only filter block above it was skipped) always
-        // receives a real array regardless of the model's cast config.
+        
         if (is_string($standings)) {
             $standings = json_decode($standings, true) ?? [];
         }

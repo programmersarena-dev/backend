@@ -21,7 +21,7 @@ return new class extends Migration {
             $table->string('status', 30)->default('Queued');
 
             $table->mediumText('code');
-            $table->mediumText('outputs')->nullable()->comment('Per-test-case outputs');
+            $table->json('outputs')->nullable()->comment('Per-test-case outputs');
             $table->mediumText('output')->nullable()->comment('Final combined/summary output');
             $table->text('error_message')->nullable();
 
