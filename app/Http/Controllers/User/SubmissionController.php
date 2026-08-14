@@ -116,12 +116,70 @@ class SubmissionController extends Controller
         // Already resolved — no reason to touch Redis for a submission
         // that's already Accepted/WA/CE/etc.
         if (!$submission->isPending()) {
-            return response()->json(['status' => $submission->status]);
+            return response()->json([
+                'status' => $submission->status,
+                'time' => $submission->time ?? 0,
+                'memory' => $submission->memory ?? 0,
+            ]);
         }
+
+        $redisData = $this->getSubmissionDataFromRedis($submission);
+        $liveStatus = $redisData['status'] ?? $this->resolveLiveStatusFromRedis($submission);
  
-        $liveStatus = $this->resolveLiveStatusFromRedis($submission);
- 
-        return response()->json(['status' => $liveStatus ?? $submission->status]);
+        return response()->json([
+            'status' => $liveStatus ?? $submission->status,
+            'time' => $redisData['time'] ?? $submission->time ?? 0,
+            'memory' => $redisData['memory'] ?? $submission->memory ?? 0,
+            'test' => $redisData['test'] ?? null,
+            'tests' => $redisData['tests'] ?? [],
+        ]);
+    }
+
+    private function getSubmissionDataFromRedis(Submission $submission): array
+    {
+        $keys = [
+            "judge:submission:{$submission->id}",
+            "judge:submission:{$submission->id}:status",
+            "submission:{$submission->id}:status",
+            "judge:status:{$submission->id}",
+        ];
+
+        $data = [];
+        foreach ($keys as $key) {
+            try {
+                $hash = Redis::hgetall($key);
+                if (!empty($hash)) {
+                    $data = $hash;
+                    break;
+                }
+            } catch (\Throwable $e) {
+                // Ignore Redis errors
+            }
+        }
+
+        if (empty($data)) {
+            return [];
+        }
+
+        $status = $data['status'] ?? null;
+        $time = isset($data['time']) ? (int) $data['time'] : (isset($data['max_time']) ? (int) $data['max_time'] : null);
+        $memory = isset($data['memory']) ? (int) $data['memory'] : (isset($data['max_memory']) ? (int) $data['max_memory'] : null);
+        $test = isset($data['test']) ? (int) $data['test'] : null;
+
+        $tests = [];
+        if (!empty($data['tests'])) {
+            $tests = is_string($data['tests']) ? json_decode($data['tests'], true) : $data['tests'];
+        } elseif (!empty($data['subtasks'])) {
+            $tests = is_string($data['subtasks']) ? json_decode($data['subtasks'], true) : $data['subtasks'];
+        }
+
+        return [
+            'status' => $status,
+            'time' => $time,
+            'memory' => $memory,
+            'test' => $test,
+            'tests' => $tests,
+        ];
     }
  
     /**

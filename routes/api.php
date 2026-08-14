@@ -192,6 +192,12 @@ Route::group(['prefix' => '/admin', 'middleware' => 'admin'], function () {
             });
         });
     });
+
+    Route::prefix('/submissions')->group(function () {
+        Route::get('/submission/{submission}/status', [AdminSubmissionController::class, 'status']);
+        Route::get('/{submission}/status', [AdminSubmissionController::class, 'status']);
+    });
+    Route::get('/submission/{submission}/status', [AdminSubmissionController::class, 'status']);
 });
 
 Route::group(['prefix' => 'internal', 'middleware' => 'internal'], function () {

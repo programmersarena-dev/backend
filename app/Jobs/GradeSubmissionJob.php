@@ -53,11 +53,23 @@ class GradeSubmissionJob implements ShouldQueue
 
         $extension = config("languages.dockerLanguages.{$this->languageKey}.extension", 'txt');
 
-        // Version token used by the Node judge worker to invalidate disk cache when test cases change
-        $testCasesVersion = $problem->test_cases_version ?? md5($problem->test_cases_path . '_' . ($problem->updated_at ?? ''));
+        $problemFolder = storage_path('app/public/' . $problem->test_cases_path);
+
+        // Compute a fingerprint of all test files so judge nodes automatically invalidate disk cache when test files change
+        $fingerprintParts = [$problem->test_cases_path, (string) ($problem->updated_at ?? '')];
+        if (is_dir($problemFolder)) {
+            $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($problemFolder, \FilesystemIterator::SKIP_DOTS));
+            foreach ($iterator as $file) {
+                if ($file->isFile()) {
+                    $fingerprintParts[] = $file->getFilename() . ':' . $file->getMTime() . ':' . $file->getSize();
+                }
+            }
+        }
+        $testCasesVersion = $problem->test_cases_version ?? md5(implode('|', $fingerprintParts));
 
         $job = [
             'id' => "sub-{$submission->id}-" . uniqid(),
+            'submission_id' => $submission->id,
             'problem_id' => $problem->id,
             'test_cases_version' => $testCasesVersion,
             'language' => $this->languageKey,
@@ -71,8 +83,6 @@ class GradeSubmissionJob implements ShouldQueue
             'grading_type' => $isIOI ? 'IOI' : 'Standard',
             'subtasks' => []
         ];
-
-        $problemFolder = storage_path('app/public/' . $problem->test_cases_path);
 
         if ($isIOI) {
             $pointsFile = "{$problemFolder}/points.json";
