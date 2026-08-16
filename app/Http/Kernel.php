@@ -43,6 +43,7 @@ class Kernel extends HttpKernel
             \Illuminate\Session\Middleware\StartSession::class,
             \Illuminate\Routing\Middleware\ThrottleRequests::class.':api',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            \App\Http\Middleware\CheckTokenExpiry::class,
             \App\Http\Middleware\SetLocalization::class,
         ],
     ];

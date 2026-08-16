@@ -47,12 +47,13 @@ class AuthController extends Controller
             return $user;
         });
 
-        [$accessToken, $cookie] = $this->issueTokens($user);
+        [$accessToken, $cookie, $accessExpiry] = $this->issueTokens($user);
 
         return response()->json([
             'message' => __('messages.signup_success'),
             'user' => $user,
             'token' => $accessToken,
+            'token_expires_at' => $accessExpiry,
         ], 201)->withCookie($cookie);
     }
 
@@ -76,12 +77,13 @@ class AuthController extends Controller
 
         $user->forceFill(['last_activity' => Carbon::now()])->save();
 
-        [$accessToken, $cookie] = $this->issueTokens($user);
+        [$accessToken, $cookie, $accessExpiry] = $this->issueTokens($user);
 
         return response()->json([
             'message' => __('messages.login_success'),
             'user' => $user,
             'token' => $accessToken,
+            'token_expires_at' => $accessExpiry,
         ])->withCookie($cookie);
     }
 
@@ -139,10 +141,11 @@ class AuthController extends Controller
 
         $tokenModel->delete();
 
-        [$newAccessToken, $newCookie] = $this->issueTokens($user);
+        [$newAccessToken, $newCookie, $newAccessExpiry] = $this->issueTokens($user);
 
         return response()->json([
             'token' => $newAccessToken,
+            'token_expires_at' => $newAccessExpiry,
         ])->withCookie($newCookie);
     }
 
@@ -227,6 +230,10 @@ class AuthController extends Controller
             Cookie::SAMESITE_LAX
         );
 
-        return [$accessTokenResult->plainTextToken, $cookie];
+        return [
+            $accessTokenResult->plainTextToken,
+            $cookie,
+            $accessExpiry->toIso8601String(),
+        ];
     }
 }
