@@ -74,62 +74,54 @@ class GradeSubmissionJob implements ShouldQueue
             'test_cases_version' => $testCasesVersion,
             'language' => $this->languageKey,
             'version' => $this->version,
+            'main_file' => "submission.{$extension}",
             'files' => [
                 "submission.{$extension}" => $sourceCode,
-                "grader.{$extension}" => $problem->grader_code ?? '',
+                "checker.cpp" => $problem->checker_code ?? '',
             ],
             'time_limit' => (int) ($this->timeLimit ?? $problem->time_limit ?? 1),
             'memory_limit' => (int) ($this->memoryLimit ?? $problem->memory_limit ?? 256),
-            'grading_type' => $isIOI ? 'IOI' : 'Standard',
+            'grading_type' => $contest->type()?->name ?? 'Classic',
             'subtasks' => []
         ];
 
         if ($isIOI) {
-            $pointsFile = "{$problemFolder}/points.json";
-            $points = file_exists($pointsFile) ? json_decode(file_get_contents($pointsFile), true) : [];
-
-            foreach ($points as $index => $pointValue) {
-                $testCases = glob("{$problemFolder}/tests/{$index}_*.in");
-                natsort($testCases);
-
+            $subtaskFiles = glob("{$problemFolder}/subtasks/*.json");
+            natsort($subtaskFiles);
+ 
+            foreach (array_values($subtaskFiles) as $subtaskIndex => $subtaskFile) {
+                $subtaskMeta = json_decode(file_get_contents($subtaskFile), true) ?? [];
+                $testNames = $subtaskMeta['testcases'] ?? [];
+ 
                 $tests = [];
-                foreach ($testCases as $testCaseFile) {
-                    $expectedOutputFile = str_replace('.in', '.out', $testCaseFile);
-
-                    // Compute relative path within the zip archive (e.g. "tests/0_1.in")
-                    $inputFileRelative = ltrim(str_replace($problemFolder, '', $testCaseFile), '/\\');
-                    $outputFileRelative = ltrim(str_replace($problemFolder, '', $expectedOutputFile), '/\\');
-
+                foreach ($testNames as $testName) {
+                    $inputFile = "{$problemFolder}/tests/{$testName}.in";
+                    $outputFile = "{$problemFolder}/tests/{$testName}.out";
                     $tests[] = [
-                        'input_file' => $inputFileRelative,
-                        'expected_output_file' => $outputFileRelative,
+                        'input' => file_exists($inputFile) ? file_get_contents($inputFile) : '',
+                        'expected_output' => file_exists($outputFile) ? file_get_contents($outputFile) : '',
                     ];
                 }
-
+ 
                 $job['subtasks'][] = [
-                    'index' => (int) $index,
-                    'points' => (int) $pointValue,
-                    'tests' => $tests
+                    'index' => $subtaskIndex,
+                    'points' => (int) ($subtaskMeta['score'] ?? 0),
+                    'tests' => $tests,
                 ];
             }
         } else {
             $testCases = glob("{$problemFolder}/*.in");
             natsort($testCases);
-
+ 
             $tests = [];
             foreach ($testCases as $testCaseFile) {
                 $expectedOutputFile = str_replace('.in', '.out', $testCaseFile);
-
-                // Compute relative path within the zip archive (e.g. "1.in")
-                $inputFileRelative = ltrim(str_replace($problemFolder, '', $testCaseFile), '/\\');
-                $outputFileRelative = ltrim(str_replace($problemFolder, '', $expectedOutputFile), '/\\');
-
                 $tests[] = [
-                    'input_file' => $inputFileRelative,
-                    'expected_output_file' => $outputFileRelative,
+                    'input' => file_get_contents($testCaseFile),
+                    'expected_output' => file_exists($expectedOutputFile) ? file_get_contents($expectedOutputFile) : ''
                 ];
             }
-
+ 
             $job['subtasks'][] = [
                 'index' => 0,
                 'points' => (int) ($problem->score ?? 100),

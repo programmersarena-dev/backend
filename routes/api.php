@@ -108,9 +108,10 @@ Route::prefix('problems')->group(function () {
 
     Route::get('/', [ProblemController::class, 'index']);
 
-    Route::prefix('problem/{contest}/{char}')->middleware(['auth:sanctum','can:view,contest'])->group(function () {
+    Route::prefix('problem/{contest}/{char}')->middleware(['can:view,contest'])->group(function () {
         Route::get('/', [ProblemController::class, 'show']);
-        Route::get('/attachments', [ProblemController::class, 'getAttachments']);
+        Route::get('/statement', [ProblemController::class, 'statement'])->name('problem.statement');
+        Route::get('/attachments', [ProblemController::class, 'attachments'])->name('problem.attachments');
     });
 
     Route::get('/standings', [ProblemController::class, 'standings']);

@@ -17,7 +17,7 @@ class ProblemListResource extends JsonResource
 
         $acceptedProblemsCount = $this->submissions
             ->whereIn('status', ['AC', '100'])
-            ->unique('problem_id')
+            ->unique('user_id')
             ->count();
 
         return [

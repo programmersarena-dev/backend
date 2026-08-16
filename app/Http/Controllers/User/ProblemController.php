@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 use App\Models\User;
 use App\Models\Submission;
@@ -79,7 +80,13 @@ class ProblemController extends Controller
     {
         $problem = $contest->getProblemByCharacter($char);
         $user = Auth::guard('sanctum')->user() ?? null;
-        $submissions = $user ? Submission::where('problem_id', $problem->id)->where('user_id', $user->id)->limit(5)->get() : collect([]);
+        $submissions = $user
+            ? $problem->submissions()
+                ->where('user_id', $user->id)
+                ->latest()
+                ->limit(5)
+                ->get()
+            : collect();
 
         return [
             'contest' => new ContestDetailResource($contest),
@@ -105,18 +112,44 @@ class ProblemController extends Controller
         return UserResource::collection($paginatedUsers);
     }
 
-    public function getAttachments(Contest $contest, $char)
+    public function statement(Contest $contest, $char)
     {
-        if ($contest->hasAttachments()) {
-            return response()->json(['message' => 'Not found attachments']);
-        }
-
-        $problem = $contest->problems()->orderBy('id', 'asc')->skip(ord($char) - ord('A'))->first();
+        $problem = $contest->getProblemByCharacter($char);
 
         if (!$problem) {
             return response()->json(['message' => 'Mesele tapylmady'], 404);
         }
 
-        return $problem->downloadAttachments();
+        $filePath = "public/{$problem->test_cases_path}/statement.pdf";
+
+        if (Storage::disk('local')->exists($filePath)) {
+            return Storage::disk('local')->response($filePath, "{$contest->id}{$char}.pdf", [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => "inline; filename=\"{$contest->id}{$char}.pdf\""
+            ]);
+        }
+
+        return response()->json(['message' => 'Mesele tapylmady'], 404);
+    }
+
+    public function attachments(Contest $contest, $char)
+    {
+        $problem = $contest->getProblemByCharacter($char);
+
+        if (!$problem) {
+            return response()->json(['message' => 'Mesele tapylmady'], 404);
+        }
+
+        $filePath = "public/{$problem->test_cases_path}/attachments";
+        $files = Storage::disk('local')->files($filePath);
+
+        if (empty($files)) {
+            return response()->json(['message' => 'Attachment yok'], 404);
+        }
+
+        return response()->download(storage_path('app/' . $files[0]), "attachments.zip", [
+            'Content-Type' => 'application/zip',
+            'Content-Disposition' => 'attachment; filename="attachments.zip"'
+        ]);
     }
 }

@@ -21,9 +21,27 @@ class ProblemDetailResource extends JsonResource
         if ($this->contest?->hasAttachments() && $this->test_cases_path) {
             $statementPath = "public/{$this->test_cases_path}/statement.pdf";
             if (Storage::disk('local')->exists($statementPath)) {
-                $statementUrl = route('problems.statement', $this->id);
+                $statementUrl = route('problem.statement', ['contest' => $this->contest_id, 'char' => $this->char]);
             }
         }
+
+        $attachmentUrl = null;
+        if ($this->contest?->hasAttachments() && $this->test_cases_path) {
+            $attachmentPath = "public/{$this->test_cases_path}/attachments";
+            $files = Storage::disk('local')->files($attachmentPath);
+
+            if (!empty($files)) {
+                $attachmentUrl = route('problem.attachments', ['contest' => $this->contest_id, 'char' => $this->char]);
+            }
+        }
+
+        $submissions = auth()->id() 
+            ? $this->submissions()
+                ->where('user_id', auth()->id())
+                ->latest()
+                ->limit(5)
+                ->get()
+            : collect();
 
         return [
             'id' => $this->id,
@@ -35,6 +53,7 @@ class ProblemDetailResource extends JsonResource
             'memory_limit' => $this->memory_limit,
             'tags' => $tags,
             'acceptable_languages' => $this->acceptableLanguages(),
+            'attachment_url' => $attachmentUrl,
             'statement_url' => $statementUrl,
 
             $this->mergeWhen(!$statementUrl, [
@@ -45,9 +64,7 @@ class ProblemDetailResource extends JsonResource
                 'note' => $this->getTranslation('note') ?? '',
             ]),
 
-            'user_submissions' => SubmissionListResource::collection(
-                $this->whenLoaded('userSubmissions')
-            ),
+            'user_submissions' => SubmissionListResource::collection($submissions),
         ];
     }
 

@@ -29,6 +29,7 @@ class StoreProblemRequest extends FormRequest
             'score' => 'required|integer|min:500',
             'test_cases' => 'required|file|mimes:zip',
             'note' => 'nullable|string',
+            'checker_code' => 'nullable|string',
 
             'difficulty' => 'nullable|integer|min:1',
 

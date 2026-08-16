@@ -4,32 +4,29 @@ return [
     'dockerLanguages' => [
         'gcc' => [
             'dockerImage' => 'gcc',
-            'commandCompile' => 'g++ /submission/submission.cpp -o /submission/executable',
-            'commandCompileGrader' => 'g++ -o /submission/executable /submission/grader.cpp /submission/submission.cpp',
-            'execute' => '/submission/executable',
-            'versions' => ['10', '11', '12'],
+            'versions' => ['10'],
             'extension' => 'cpp',
         ],
         'python' => [
             'dockerImage' => 'python',
-            'execute' => 'python /submission/grader.py',
-            'versions' => ['3.8', '3.9', '3.10'],
+            'versions' => ['3.10'],
             'extension' => 'py',
         ],
         'php' => [
             'dockerImage' => 'php',
-            'execute' => 'php /submission/grader.php',
-            'versions' => ['7.4', '8.0', '8.1'],
+            'versions' => ['8.0'],
             'extension' => 'php',
         ],
-        // 'pascal' => [
-        //     'dockerImage' => 'pascal',
-        //     'commandCompile' => 'fpc /submission/submission.pas -o /submission/executable',
-        //     'commandCompileGrader' => 'fpc /submission/grader.pas /submission/submission.pas -o /submission/executable',
-        //     'execute' => '/submission/executable',
-        //     'versions' => ['3.2.2'],
-        //     'extension' => 'pas',
-        // ],
+        'freepascal' => [
+            'dockerImage' => 'freepascal',
+            'versions' => ['3.2.2'],
+            'extension' => 'pas',
+        ],
+        'golang' => [
+            'dockerImage' => 'golang',
+            'versions' => ['1.21.6'],
+            'extension' => 'go',
+        ],
         // 'abc' => [
         //     'dockerImage' => 'abc-pascal',
         //     'execute' => 'abc /submission/grader.abc',

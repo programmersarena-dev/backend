@@ -181,7 +181,7 @@ class StandingService
         $contest = $standing->contest;
 
         if ($contest->status !== 'Active') {
-            throw new \Exception('Contest must be started before adding users.');
+            return $standing->result ?? [];
         }
 
         $contestType = $contest->type->name ?? 'Classic';

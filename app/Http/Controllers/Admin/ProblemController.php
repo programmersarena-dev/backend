@@ -32,6 +32,7 @@ class ProblemController extends Controller
     {
         if ($contest->isEnded())
             return response()->json(['message' => 'Contest ended'], 404);
+        
         $data = $request->validated();
 
         $file = $request->file('test_cases');
@@ -73,7 +74,7 @@ class ProblemController extends Controller
             'problem_id' => $problem->id,
             'language' => 'en',
             'name' => $data['name_en'],
-            'description' => $data['description_en'],
+            'description' => $data['description_en'] ?? '',
             'input' => $data['input_en'] ?? '',
             'output' => $data['output_en'] ?? '',
             'note' => $data['note_en'] ?? '',
@@ -83,7 +84,7 @@ class ProblemController extends Controller
             'problem_id' => $problem->id,
             'language' => 'ru',
             'name' => $data['name_ru'],
-            'description' => $data['description_ru'],
+            'description' => $data['description_ru'] ?? '',
             'input' => $data['input_ru'] ?? '',
             'output' => $data['output_ru'] ?? '',
             'note' => $data['note_ru'] ?? '',
@@ -194,8 +195,9 @@ class ProblemController extends Controller
 
     public function destroy(Contest $contest, $char)
     {
-        if (!$contest->isEnded())
+        if ($contest->isEnded())
             return response()->json(['message' => 'Contest ended'], 404);
+
         $problem = $contest->problems()->orderBy('id', 'asc')->skip(ord($char) - ord('A'))->first();
         $problem_en = ProblemTranslation::where('problem_id', $problem->id)->where('language', 'en')->firstOrFail();
         $problem_ru = ProblemTranslation::where('problem_id', $problem->id)->where('language', 'ru')->firstOrFail();

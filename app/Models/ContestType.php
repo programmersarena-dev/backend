@@ -10,7 +10,9 @@ class ContestType extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name'];
+    protected $fillable = [
+        'name'
+    ];
 
     /**
      * Contest types have many contests.

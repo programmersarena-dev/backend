@@ -30,6 +30,7 @@ class Problem extends Model
         'input',
         'output',
         'test_cases_path',
+        'checker_code',
         'note',
         'is_public',
     ];
@@ -188,31 +189,5 @@ class Problem extends Model
                     ->count('problem_id');
             }
         );
-    }
-
-    /* -------------------------------------------------------------------------- */
-    /* FILE UTILITIES                                                             */
-    /* -------------------------------------------------------------------------- */
-
-    /**
-     * Resolves absolute file path for downloading problem attachments.
-     */
-    public function getAttachmentPath(): ?string
-    {
-        if (!$this->test_cases_path) {
-            return null;
-        }
-
-        $folder = "public/{$this->test_cases_path}/attachments";
-        $files = Storage::disk('local')->files($folder);
-
-        if (empty($files)) {
-            return null;
-        }
-
-        $relativePath = $files[0];
-        $fullPath = storage_path("app/{$relativePath}");
-
-        return file_exists($fullPath) ? $fullPath : null;
     }
 }

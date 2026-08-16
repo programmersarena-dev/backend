@@ -29,6 +29,7 @@ class UpdateProblemRequest extends FormRequest
             'score' => 'required|integer|min:500',
             'test_cases' => 'nullable|file|mimes:zip',
             'note' => 'nullable|string',
+            'checker_code' => 'nullable|string',
 
             // Kept identical to StoreProblemRequest's placeholder — see the
             // note there. Update both together once the real scale is set.

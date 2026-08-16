@@ -161,7 +161,7 @@ class SubmissionController extends Controller
             return [];
         }
 
-        $status = $data['status'] ?? null;
+        $status = $this->getStatus($data['status'],$data['test']) ?? null;
         $time = isset($data['time']) ? (int) $data['time'] : (isset($data['max_time']) ? (int) $data['max_time'] : null);
         $memory = isset($data['memory']) ? (int) $data['memory'] : (isset($data['max_memory']) ? (int) $data['max_memory'] : null);
         $test = isset($data['test']) ? (int) $data['test'] : null;
@@ -180,6 +180,13 @@ class SubmissionController extends Controller
             'test' => $test,
             'tests' => $tests,
         ];
+    }
+
+    private function getStatus($status, $test)
+    {
+        if($status === "OK")return "Judging-#".($test+1);
+        if($status !== "OK" && $status !== "AC")return $status."-#".($test);
+        return $status;
     }
  
     /**
