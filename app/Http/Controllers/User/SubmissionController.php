@@ -132,6 +132,7 @@ class SubmissionController extends Controller
             'memory' => $redisData['memory'] ?? $submission->memory ?? 0,
             'test' => $redisData['test'] ?? null,
             'tests' => $redisData['tests'] ?? [],
+            'subtask' => !empty($redisData['subtask']) && $redisData['subtask'] != "0" ? (int) $redisData['subtask'] : null,
         ]);
     }
 
@@ -161,7 +162,6 @@ class SubmissionController extends Controller
             return [];
         }
 
-        $status = $this->getStatus($data['status'],$data['test']) ?? null;
         $time = isset($data['time']) ? (int) $data['time'] : (isset($data['max_time']) ? (int) $data['max_time'] : null);
         $memory = isset($data['memory']) ? (int) $data['memory'] : (isset($data['max_memory']) ? (int) $data['max_memory'] : null);
         $test = isset($data['test']) ? (int) $data['test'] : null;
@@ -173,23 +173,33 @@ class SubmissionController extends Controller
             $tests = is_string($data['subtasks']) ? json_decode($data['subtasks'], true) : $data['subtasks'];
         }
 
+        $rawStatus = $data['status'] ?? null;
+        $subtask = !empty($data['subtask']) && $data['subtask'] != "0" ? (int) $data['subtask'] : null;
+
+        $contestType = $submission->contest?->type?->name ?? 'Classic';
+
+        if ($contestType === 'IOI') {
+            $status = is_numeric($rawStatus) ? (int) $rawStatus : $rawStatus;
+        } else {
+            if (is_numeric($rawStatus)) {
+                $status = (int) $rawStatus;
+            } elseif ($rawStatus === "OK") {
+                $status = $test && $test > 0 ? "Judging-#" . ($test + 1) : "Judging";
+            } elseif ($rawStatus !== "AC") {
+                $status = $test && $test > 0 ? $rawStatus . "-#" . $test : $rawStatus;
+            } else {
+                $status = $rawStatus;
+            }
+        }
+
         return [
             'status' => $status,
             'time' => $time,
             'memory' => $memory,
             'test' => $test,
             'tests' => $tests,
+            'subtask' => $subtask,
         ];
-    }
-
-    private function getStatus($status, $test)
-    {
-        if (is_numeric($status)) {
-            return (int) $status;
-        }
-        if($status === "OK")return "Judging-#".($test+1);
-        if($status !== "AC")return $status."-#".($test);
-        return $status;
     }
  
     /**
