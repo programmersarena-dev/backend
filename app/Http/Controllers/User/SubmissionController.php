@@ -184,8 +184,11 @@ class SubmissionController extends Controller
 
     private function getStatus($status, $test)
     {
+        if (is_numeric($status)) {
+            return (int) $status;
+        }
         if($status === "OK")return "Judging-#".($test+1);
-        if($status !== "OK" && $status !== "AC")return $status."-#".($test);
+        if($status !== "AC")return $status."-#".($test);
         return $status;
     }
  

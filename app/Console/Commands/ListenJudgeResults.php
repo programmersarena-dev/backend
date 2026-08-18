@@ -67,7 +67,7 @@ class ListenJudgeResults extends Command
             'time' => $result['max_time_used_ms'] ?? null,
             'memory' => $result['max_memory_used_kb'] ?? null,
             'error_message' => $result['error_message'] ?? null,
-            'outputs' => is_array($subtasksData) ? json_encode($subtasksData) : $subtasksData,
+            'outputs' => $subtasksData,
             'judged_at' => now(),
         ]);
 

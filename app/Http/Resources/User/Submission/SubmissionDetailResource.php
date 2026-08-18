@@ -37,6 +37,7 @@ class SubmissionDetailResource extends JsonResource
             'memory' => ($this->memory ?? 0),
             'sent_time' => $this->created_at?->toIso8601String(),
             'code' => is_string($this->code) ? json_decode($this->code) ?? $this->code : $this->code,
+            'output' => $this->output,
             'outputs' => $canViewDetails ? (is_string($this->outputs) ? json_decode($this->outputs) : $this->outputs) : [],
         ];
     }

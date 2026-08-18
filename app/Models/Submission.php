@@ -75,7 +75,6 @@ class Submission extends Model
         self::STATUS_COMPILING,
         self::STATUS_RUNNING,
         self::STATUS_JUDGING,
-        '0',
     ];
 
     /**
