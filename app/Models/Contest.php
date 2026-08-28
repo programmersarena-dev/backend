@@ -74,6 +74,11 @@ class Contest extends Model
         return $this->hasOne(ContestStanding::class);
     }
 
+    public function groups(): HasMany
+    {
+        return $this->hasMany(Group::class);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Accessors & Computed Attributes
@@ -103,18 +108,33 @@ class Contest extends Model
         return $this->type?->name === 'IOI';
     }
 
+    public function isICPC(): bool
+    {
+        return $this->type?->name === 'ICPC';
+    }
+
+    public function isDuel(): bool
+    {
+        return $this->type?->name === 'Duel';
+    }
+
     /**
-     * Get a problem by alphabetical index (A, B, C, ...).
-     */
+      * Get a problem by alphabetical index (A, B, C, ...).
+      */
 
     public function acceptableLanguages(): array
     {
         $languages = [];
         $dockerLanguages = config('languages.dockerLanguages', []);
+        $availableLanguages = app(\App\Services\JudgeService::class)->getAvailableLanguages();
+        $filterByAvailable = !empty($availableLanguages);
 
         foreach ($dockerLanguages as $language => $details) {
             foreach ($details['versions'] ?? [] as $version) {
-                $languages[] = "{$language}-{$version}";
+                $langKey = "{$language}-{$version}";
+                if (!$filterByAvailable || in_array($langKey, $availableLanguages)) {
+                    $languages[] = $langKey;
+                }
             }
         }
 
@@ -146,21 +166,6 @@ class Contest extends Model
         )->shouldCache();
     }
 
-    /**
-     * Get the contest status based on current time.
-     */
-    public function getStatus(): string
-    {
-        $now = Carbon::now('UTC');
-        if ($this->start_date > $now) {
-            return 'notStarted';
-        }
-        if ($this->end_date >= $now) {
-            return 'started';
-        }
-        return 'ended';
-    }
-
     public function isEnded(): bool
     {
         return Carbon::now('UTC') > $this->end_date;
@@ -177,13 +182,13 @@ class Contest extends Model
      */
     public function canUserSubmit(int|string $userId): bool
     {
-        $status = $this->getStatus();
+        $status = $this->status;
 
-        if ($this->active && $status === 'ended') {
-            return true; // allow viewing submissions after end
+        if ($this->active && $status === 'Ended') {
+            return true;
         }
 
-        if (!$this->active || $status === 'notStarted') {
+        if (!$this->active || $status === 'Pending') {
             return false;
         }
 

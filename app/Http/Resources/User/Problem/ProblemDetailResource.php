@@ -11,10 +11,11 @@ class ProblemDetailResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $contestStatus = $this->contest?->getStatus();
+        $contestStatus = $this->contest?->status;
+        \Log::info($contestStatus);
 
-        $tags = ($contestStatus === 'Ended' || $this->contest_id)
-            ? is_array($this->tags) ? $this->tags : json_decode($this->tags, true)
+        $tags = ($contestStatus === 'Ended' || !$this->contest_id)
+            ? (is_array($this->tags) ? $this->tags : json_decode($this->tags, true))
             : [];
 
         $statementUrl = null;

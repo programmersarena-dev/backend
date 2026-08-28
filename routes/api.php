@@ -1,31 +1,28 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-
-use App\Models\ContestType;
-use App\Models\User;
-
-use App\Http\Controllers\Auth\EmailVerificationController;
-use App\Http\Controllers\Auth\AuthController;
-use App\Http\Controllers\LocalizationController;
-use App\Http\Controllers\User\ContestController;
-use App\Http\Controllers\User\CountryController;
-use App\Http\Controllers\User\ProblemController;
-use App\Http\Controllers\User\UserController;
-use App\Http\Controllers\User\ContestRatingController;
-use App\Http\Controllers\User\ContestStandingController;
-use App\Http\Controllers\User\SubmissionController;
-use App\Http\Controllers\User\BlogController;
-
-use App\Http\Controllers\Admin\FileController;
-use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
-use App\Http\Controllers\Admin\ImageController as AdminImageController;
 use App\Http\Controllers\Admin\BlogController as AdminBlogController;
 use App\Http\Controllers\Admin\ContestController as AdminContestController;
+use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Admin\FileController;
+use App\Http\Controllers\Admin\ImageController as AdminImageController;
 use App\Http\Controllers\Admin\ProblemController as AdminProblemController;
 use App\Http\Controllers\Admin\SubmissionController as AdminSubmissionController;
-
+use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Internal\TestCaseDownloadController;
+use App\Http\Controllers\LocalizationController;
+use App\Http\Controllers\User\BlogController;
+use App\Http\Controllers\User\ContestController;
+use App\Http\Controllers\User\ContestRatingController;
+use App\Http\Controllers\User\ContestStandingController;
+use App\Http\Controllers\User\CountryController;
+use App\Http\Controllers\User\ProblemController;
+use App\Http\Controllers\User\SubmissionController;
+use App\Http\Controllers\User\TeamController;
+use App\Http\Controllers\User\UserController;
+use App\Models\ContestType;
+use App\Models\User;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -42,7 +39,6 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-
 Route::prefix('auth')->group(function () {
 
     Route::post('/signup', [AuthController::class, 'signup']);
@@ -50,7 +46,6 @@ Route::prefix('auth')->group(function () {
     Route::post('/refresh', [AuthController::class, 'refresh']);
 
 });
-
 
 Route::middleware('auth:sanctum')->prefix('auth')->group(function () {
 
@@ -60,7 +55,6 @@ Route::middleware('auth:sanctum')->prefix('auth')->group(function () {
 
 });
 
-
 Route::group(['prefix' => '/email'], function () {
 
     Route::get('/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])->middleware(['signed'])->name('verification.verify');
@@ -68,12 +62,9 @@ Route::group(['prefix' => '/email'], function () {
 
 });
 
-
 Route::post('/locale', [LocalizationController::class, 'setLocale'])->name('api.locale.set');
 
-
 Route::get('/countries', [CountryController::class, 'index'])->name('api.countries.index');
-
 
 Route::group(['prefix' => '/blogs'], function () {
 
@@ -81,9 +72,18 @@ Route::group(['prefix' => '/blogs'], function () {
 
 });
 
+Route::prefix('teams')->middleware(['auth:sanctum', 'verified'])->group(function () {
+    Route::get('/', [TeamController::class, 'index']);
+    Route::post('/', [TeamController::class, 'store']);
+    Route::post('/{team}/invite', [TeamController::class, 'invite']);
+    Route::post('/{team}/accept', [TeamController::class, 'acceptInvitation']);
+    Route::post('/{team}/decline', [TeamController::class, 'declineInvitation']);
+    Route::delete('/{team}', [TeamController::class, 'destroy']);
+    Route::delete('/{team}/members/{member}', [TeamController::class, 'removeMember']);
+});
 
 Route::prefix('contests')->group(function () {
-    
+
     Route::get('/', [ContestController::class, 'index']);
 
     Route::prefix('{contest}')->group(function () {
@@ -92,17 +92,19 @@ Route::prefix('contests')->group(function () {
             Route::get('/', [ContestController::class, 'show']);
             Route::get('/submit', [ContestController::class, 'submit']);
             Route::get('/standings', [ContestStandingController::class, 'show']);
-            Route::get('/problem/{problem}/user/{user}', [ContestController::class, 'getContestProblemSubmissions']);
+            Route::get('/problem/{problem}/user/{handle}', [ContestController::class, 'getContestProblemSubmissions']);
+        });
+
+        Route::middleware(['auth:sanctum', 'verified', 'can:register,contest'])->group(function () {
+            Route::post('/register', [ContestController::class, 'register']);
         });
 
         Route::middleware(['auth:sanctum', 'verified', 'can:view,contest'])->group(function () {
-            Route::post('/register', [ContestController::class, 'register']);
             Route::post('/unregister', [ContestController::class, 'unregister']);
         });
 
     });
 });
-
 
 Route::prefix('problems')->group(function () {
 
@@ -118,16 +120,14 @@ Route::prefix('problems')->group(function () {
 
 });
 
-
 Route::prefix('submissions')->group(function () {
 
     Route::get('/', [SubmissionController::class, 'index']);
     Route::get('/submission/{submission}', [SubmissionController::class, 'show'])->middleware(['auth:sanctum', 'can:view,submission']);
     Route::get('/submission/{submission}/status', [SubmissionController::class, 'status'])->middleware(['auth:sanctum', 'can:view,submission']);
     Route::post('/problem/{code}/submit', [SubmissionController::class, 'store'])->middleware(['auth:sanctum', 'verified']);
-    
-});
 
+});
 
 Route::group(['prefix' => '/profile/{handle}'], function () {
 
@@ -138,7 +138,6 @@ Route::group(['prefix' => '/profile/{handle}'], function () {
     Route::post('/update', [UserController::class, 'update'])->middleware(['auth:sanctum', 'verified']);
 
 });
-
 
 Route::get('/ratings', [ContestRatingController::class, 'index']);
 
@@ -158,10 +157,12 @@ Route::group(['prefix' => '/admin', 'middleware' => 'admin'], function () {
     });
     Route::get('/users', function () {
         $users = User::orderBy('name', 'asc')->get();
+
         return response()->json($users);
     });
     Route::get('/contest-types', function () {
         $types = ContestType::orderBy('name', 'asc')->get();
+
         return response()->json($types);
     });
     Route::group(['prefix' => '/blog'], function () {

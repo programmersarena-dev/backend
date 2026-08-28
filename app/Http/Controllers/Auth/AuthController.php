@@ -218,13 +218,15 @@ class AuthController extends Controller
         $refreshExpiry = Carbon::now()->addMinutes(self::REFRESH_TOKEN_EXPIRY_MINUTES);
         $refreshTokenResult = $user->createToken('refresh_token', ['issue-access-token'], $refreshExpiry);
 
+        $secure = str_starts_with(env('APP_URL', 'http://localhost'), 'https');
+
         $cookie = cookie(
             self::REFRESH_COOKIE_NAME,
             $refreshTokenResult->plainTextToken,
             self::REFRESH_TOKEN_EXPIRY_MINUTES,
             '/',
             null,
-            true,
+            $secure,
             true,
             false,
             Cookie::SAMESITE_LAX

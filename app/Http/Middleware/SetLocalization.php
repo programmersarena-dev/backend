@@ -24,12 +24,16 @@ class SetLocalization
         }
 
         if (!$locale || !in_array($locale, $supportedLocales)) {
-            $locale = $request->header('Accept-Language', 'tk');
+            $locale = $request->header('X-Locale');
 
-            $locale = substr($locale, 0, 2);
+            if (!$locale || !in_array($locale, $supportedLocales)) {
+                $locale = $request->header('Accept-Language', 'tk');
 
-            if (!in_array($locale, $supportedLocales)) {
-                $locale = config('app.fallback_locale', 'tk');
+                $locale = substr($locale, 0, 2);
+
+                if (!in_array($locale, $supportedLocales)) {
+                    $locale = config('app.fallback_locale', 'tk');
+                }
             }
         }
 

@@ -32,6 +32,8 @@ return [
     ],
 
     'judge' => [
+        'url' => env('JUDGE_URL', 'http://127.0.0.1:3001'),
+        'urls' => env('JUDGE_URLS') ? array_map('trim', explode(',', env('JUDGE_URLS'))) : null,
         'token' => env('JUDGE_SECRET_TOKEN'),
     ],
 

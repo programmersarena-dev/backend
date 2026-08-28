@@ -169,6 +169,49 @@ class Submission extends Model
             str_starts_with($this->status ?? '', 'Judging');
     }
 
+    /**
+     * Find the first failed test from outputs and return its 1-based
+     * test number and subtask index. Returns null if there is no failure.
+     *
+     * @return array{test: int|null, subtask: int|null, total_subtasks: int}
+     */
+    public function getFirstFailedTest(): array
+    {
+        $outputs = $this->outputs;
+
+        if (empty($outputs) || !is_array($outputs)) {
+            return [
+                'test' => null,
+                'subtask' => null,
+                'total_subtasks' => 0,
+            ];
+        }
+
+        $totalSubtasks = count($outputs);
+
+        foreach ($outputs as $subtaskData) {
+            $tests = $subtaskData['tests'] ?? [];
+
+            foreach ($tests as $testIndex => $test) {
+                $log = strtoupper($test['log'] ?? '');
+
+                if ($log !== 'AC' && $log !== 'OK') {
+                    return [
+                        'test' => $testIndex + 1,
+                        'subtask' => ($subtaskData['index'] ?? 0) + 1,
+                        'total_subtasks' => $totalSubtasks,
+                    ];
+                }
+            }
+        }
+
+        return [
+            'test' => null,
+            'subtask' => null,
+            'total_subtasks' => $totalSubtasks,
+        ];
+    }
+
     /* -------------------------------------------------------------------------- */
     /* QUERY SCOPES                                                               */
     /* -------------------------------------------------------------------------- */

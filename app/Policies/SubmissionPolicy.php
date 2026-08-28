@@ -46,6 +46,10 @@ class SubmissionPolicy
         $isContestEnded = $contest?->status === 'Ended';
         $isOwner = $user && $submission->user_id === $user->id;
 
+        if ($contest?->status === 'Pending') {
+            return Response::deny('Bäsleşik hâlâ başlamady', 403);
+        }
+
         return ($isContestEnded || $isOwner)
             ? Response::allow()
             : Response::deny('Çözüwi görmäge rugsat berilmeýär', 403);

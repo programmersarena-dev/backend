@@ -4,7 +4,7 @@ return [
     'dockerLanguages' => [
         'gcc' => [
             'dockerImage' => 'gcc',
-            'versions' => ['10'],
+            'versions' => ['10', '11'],
             'extension' => 'cpp',
         ],
         'python' => [

@@ -15,6 +15,7 @@ class SubmissionListResource extends JsonResource
     public function toArray(Request $request): array
     {
         $problem = $this->problem;
+        $failedTest = $this->getFirstFailedTest();
 
         return [
             'id' => $this->id,
@@ -34,6 +35,9 @@ class SubmissionListResource extends JsonResource
             'memory' => ($this->memory ?? 0),
 
             'created_at' => $this->created_at?->toIso8601String(),
+
+            'test' => $failedTest['test'] ?? null,
+            'subtask' => ($failedTest['total_subtasks'] ?? 0) > 1 ? ($failedTest['subtask'] ?? null) : null,
         ];
     }
 }

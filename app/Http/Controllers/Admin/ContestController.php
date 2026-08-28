@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use App\Models\Contest;
 use App\Models\ContestType;
 use App\Models\ContestStanding;
+use App\Models\Group;
 use App\Models\User;
 
 use App\Http\Requests\StoreContestRequest;
@@ -33,7 +34,7 @@ class ContestController extends Controller
         $contests = Contest::where(fn($q) => $q->where('name', 'like', '%' . $searchName . '%'))->orderBy('start_date', 'desc')->get();
 
         $contests->each(function ($contest) use ($now) {
-            $contest->status = $contest->end_date < $now ? 'ended' : ($now < $contest->start_date ? 'notStarted' : 'started');
+            $contest->status = $contest->end_date < $now ? 'Ended' : ($now < $contest->start_date ? 'Pending' : 'Active');
         });
 
         $perPage = 20;
@@ -165,7 +166,7 @@ class ContestController extends Controller
     public function notifyUsers(Contest $contest)
     {
         if ($contest) {
-            if ($contest->getStatus() != 'notStarted') {
+            if ($contest->status != 'Pending') {
                 return response()->json([
                     'message' => 'Bäsleşik eýýam başlady ýa gutardy'
                 ], 400);
@@ -207,12 +208,38 @@ class ContestController extends Controller
     private function syncParticipants(Contest $contest, array $participants, string $type, $users): void
     {
         $isDuel = $type === 'Duel';
+        $isICPC = $type === 'ICPC';
         $sync = [];
 
         foreach (['official', 'unofficial'] as $group) {
             $isOfficial = $group === 'official';
+            $entries = $participants[$group] ?? [];
 
-            foreach ($participants[$group] ?? [] as $entry) {
+            if ($isICPC) {
+                $flatEntries = [];
+                foreach ($entries as $entry) {
+                    if (is_array($entry)) {
+                        $flatEntries = array_merge($flatEntries, $entry);
+                    } else {
+                        $flatEntries[] = $entry;
+                    }
+                }
+
+                foreach (array_chunk($flatEntries, 4) as $chunk) {
+                    foreach ($chunk as $userName) {
+                        $user = $users[$userName] ?? null;
+                        if ($user) {
+                            $sync[$user->id] = [
+                                'is_official' => $isOfficial,
+                                'opponent_id' => null,
+                            ];
+                        }
+                    }
+                }
+                continue;
+            }
+
+            foreach ($entries as $entry) {
                 if ($isDuel) {
                     [$nameA, $nameB] = $entry;
                     $userA = $users[$nameA] ?? null;
@@ -242,10 +269,33 @@ class ContestController extends Controller
             }
         }
 
-        // sync() replaces the full pivot set for this contest with $sync.
-        // old_rating / rating_change are intentionally left untouched here —
-        // they belong to the post-contest rating calculation step, not
-        // contest creation/editing.
         $contest->participants()->sync($sync);
+    }
+
+    private function syncICPCGroups(Contest $contest, array $entries, $users, bool $isOfficial): void
+    {
+        $groupIndex = 1;
+        $chunks = array_values(array_filter(array_chunk($entries, 3)));
+
+        foreach ($chunks as $chunk) {
+            $group = Group::updateOrCreate(
+                [
+                    'contest_id' => $contest->id,
+                    'name' => 'Group ' . $groupIndex,
+                ],
+                [
+                    'contest_id' => $contest->id,
+                    'name' => 'Group ' . $groupIndex,
+                ]
+            );
+
+            $group->members()->sync(
+                $users->filter(fn($u) => in_array($u->name, $chunk))->map(fn($u) => [
+                    'contest_id' => $contest->id,
+                ])->toArray()
+            );
+
+            $groupIndex++;
+        }
     }
 }

@@ -23,6 +23,8 @@ class SubmissionDetailResource extends JsonResource
         $isOwner = $user && $this->user_id === $user->id;
         $canViewDetails = $isContestEnded || $isOwner;
 
+        $failedTest = $this->getFirstFailedTest();
+
         return [
             'id' => $this->id,
             'handle' => $this->user?->handle,
@@ -37,8 +39,10 @@ class SubmissionDetailResource extends JsonResource
             'memory' => ($this->memory ?? 0),
             'sent_time' => $this->created_at?->toIso8601String(),
             'code' => is_string($this->code) ? json_decode($this->code) ?? $this->code : $this->code,
-            'output' => $this->output,
+            'output' => $canViewDetails ? $this->output : null,
             'outputs' => $canViewDetails ? (is_string($this->outputs) ? json_decode($this->outputs) : $this->outputs) : [],
+            'test' => $canViewDetails ? ($failedTest['test'] ?? null) : null,
+            'subtask' => $canViewDetails && ($failedTest['total_subtasks'] ?? 0) > 1 ? ($failedTest['subtask'] ?? null) : null,
         ];
     }
 }

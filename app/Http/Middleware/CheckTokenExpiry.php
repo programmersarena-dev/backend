@@ -11,7 +11,7 @@ class CheckTokenExpiry
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if ($request->is('auth/refresh')) {
+        if ($request->is('api/v1/auth/refresh')) {
             return $next($request);
         }
 

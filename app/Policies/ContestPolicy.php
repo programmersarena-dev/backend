@@ -4,7 +4,6 @@ namespace App\Policies;
 
 use App\Models\Contest;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
 use Illuminate\Support\Facades\Auth;
 
 class ContestPolicy
@@ -36,6 +35,22 @@ class ContestPolicy
     public function create(User $user): bool
     {
         return false;
+    }
+
+    /**
+     * Determine whether the user can register for the contest.
+     */
+    public function register(User $user, Contest $contest): bool
+    {
+        return $contest->active;
+    }
+
+    /**
+     * Determine whether the user can unregister from the contest.
+     */
+    public function unregister(User $user, Contest $contest): bool
+    {
+        return $contest->active;
     }
 
     /**

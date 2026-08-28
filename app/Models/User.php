@@ -6,6 +6,7 @@ use App\Notifications\CustomResetPasswordNotification;
 use App\Notifications\VerifyEmail;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -86,6 +87,18 @@ class User extends Authenticatable implements MustVerifyEmail
     public function contestRatings(): HasMany
     {
         return $this->hasMany(ContestRating::class);
+    }
+
+    public function ownedTeams(): HasMany
+    {
+        return $this->hasMany(Team::class, 'owner_id');
+    }
+
+    public function teamMemberships(): BelongsToMany
+    {
+        return $this->belongsToMany(Team::class, 'team_user')
+            ->withPivot('status', 'responded_at')
+            ->withTimestamps();
     }
 
     /**

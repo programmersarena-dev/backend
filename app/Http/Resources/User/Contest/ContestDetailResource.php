@@ -16,20 +16,19 @@ class ContestDetailResource extends JsonResource
     public function toArray(Request $request): array
     {
         $user = Auth::guard('sanctum')->user();
-        $isAdmin = $user && $user->user_type === 'admin';
+        $isAdmin = $user?->role === 'admin';
 
-        // 1. Fetch author names cleanly via the loaded relation (or fallback)
         $authorNames = $this->relationLoaded('authors')
             ? $this->authors->pluck('name')
             : $this->authors()->pluck('name');
 
-        // 2. Resolve participants via Eloquent relation instead of parsing JSON strings
         $participants = $this->resolveParticipants();
 
-        // 3. Format duration cleanly
         $formattedDuration = is_numeric($this->duration_minutes)
             ? sprintf('%02d:%02d', floor($this->duration_minutes / 60), $this->duration_minutes % 60)
             : $this->duration;
+
+        $groups = $this->resolveGroups();
 
         return [
             'id' => $this->id,
@@ -40,11 +39,13 @@ class ContestDetailResource extends JsonResource
             'end_date' => $this->end_date?->toISOString(),
             'duration' => $formattedDuration,
             'participants' => $participants,
+            'groups' => $groups,
             'official' => (bool) $this->official,
             'attachments' => $this->hasAttachments(),
             'subtasks' => $this->hasSubtasks(),
-            'status' => $this->getStatus(),
+            'status' => $this->status,
             'acceptable_languages' => $this->acceptableLanguages(),
+            'is_registered' => $user ? (bool) $this->isUserRegistered($user->id) : false,
 
             // Conditional field using Laravel API Resource helpers
             $this->mergeWhen($isAdmin, [
@@ -103,5 +104,24 @@ class ContestDetailResource extends JsonResource
                 $opponent?->name ?? 'Undefined',
             ];
         })->values();
+    }
+
+    protected function resolveGroups(): array
+    {
+        if ($this->type?->name !== 'ICPC') {
+            return [];
+        }
+
+        $groups = $this->relationLoaded('groups')
+            ? $this->groups
+            : $this->groups()->with('members')->get();
+
+        return $groups->map(function ($group) {
+            return [
+                'id' => $group->id,
+                'name' => $group->name,
+                'members' => $group->members->pluck('name')->sort()->values()->all(),
+            ];
+        })->values()->all();
     }
 }

@@ -21,7 +21,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        $locale = Session::get('locale', 'tm');
+        $locale = Session::get('locale', config('app.fallback_locale', 'tk'));
         App::setLocale($locale);
     }
 }

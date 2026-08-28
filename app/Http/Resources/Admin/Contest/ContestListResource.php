@@ -68,7 +68,7 @@ class ContestListResource extends JsonResource
             'official' => (bool) $this->official,
             'attachments' => (bool) $this->hasAttachments(),
             'subtasks' => (bool) $this->hasSubtasks(),
-            'status' => $this->getStatus(),
+            'status' => $this->status,
             'is_registered' => $user ? (bool) $this->isUserRegistered($user->id) : false,
             'is_added_ratings' => ContestRating::where('contest_id', $this->id)->exists(),
         ];

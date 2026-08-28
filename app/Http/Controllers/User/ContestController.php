@@ -10,11 +10,12 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Http\Response;
 
 use App\Models\Contest;
 use App\Models\Problem;
+use App\Models\Group;
 use App\Models\Submission;
+use App\Models\Team;
 
 use App\Http\Resources\User\Contest\ContestListResource;
 use App\Http\Resources\User\Contest\ContestDetailResource;
@@ -103,6 +104,10 @@ class ContestController extends Controller
             return $this->registerForDuel($contest, $user, $request, $isOfficialUser);
         }
 
+        if ($contestType === 'ICPC') {
+            return $this->registerForICPC($contest, $user, $isOfficialUser);
+        }
+
         return $this->registerForClassic($contest, $user, $isOfficialUser);
     }
 
@@ -116,6 +121,78 @@ class ContestController extends Controller
             $contest->participants()->attach($user->id, [
                 'is_official' => $isOfficialUser,
             ]);
+        });
+
+        return response()->json(['message' => __('contest.registered')], 200);
+    }
+
+    private function registerForICPC(Contest $contest, User $user, bool $isOfficialUser): JsonResponse
+    {
+        if ($contest->participants()->where('user_id', $user->id)->exists()) {
+            return response()->json(['message' => __('contest.already_registered')], 409);
+        }
+
+        $teamId = request()->input('team_id');
+
+        DB::transaction(function () use ($contest, $user, $isOfficialUser, $teamId) {
+            $contest->participants()->attach($user->id, [
+                'is_official' => $isOfficialUser,
+            ]);
+
+            if ($teamId) {
+                $team = Team::where('id', $teamId)
+                    ->whereHas('members', function ($q) use ($user) {
+                        $q->where('users.id', $user->id)
+                            ->wherePivot('status', 'accepted');
+                    })
+                    ->with('members')
+                    ->first();
+
+                if (!$team) {
+                    throw new \Exception('Team not found or you are not an accepted member');
+                }
+
+                $acceptedMembers = $team->acceptedMembers;
+                if ($acceptedMembers->count() >= 3) {
+                    throw new \Exception('Team already has 3 members');
+                }
+
+                $group = Group::where('contest_id', $contest->id)
+                    ->where('name', $team->name)
+                    ->first();
+
+                if (!$group) {
+                    $group = Group::create([
+                        'contest_id' => $contest->id,
+                        'name' => $team->name,
+                    ]);
+                }
+
+                foreach ($acceptedMembers as $member) {
+                    if (!$contest->participants()->where('user_id', $member->id)->exists()) {
+                        $contest->participants()->attach($member->id, [
+                            'is_official' => $isOfficialUser,
+                        ]);
+                    }
+                    $group->members()->attach($member->id, ['contest_id' => $contest->id]);
+                }
+            } else {
+                $group = Group::where('contest_id', $contest->id)
+                    ->where('name', 'not like', 'Team:%')
+                    ->has('members', '<', 3)
+                    ->orderBy('id', 'asc')
+                    ->first();
+
+                if ($group) {
+                    $group->members()->attach($user->id, ['contest_id' => $contest->id]);
+                } else {
+                    $group = Group::create([
+                        'contest_id' => $contest->id,
+                        'name' => 'Group ' . (Group::where('contest_id', $contest->id)->count() + 1),
+                    ]);
+                    $group->members()->attach($user->id, ['contest_id' => $contest->id]);
+                }
+            }
         });
 
         return response()->json(['message' => __('contest.registered')], 200);
@@ -213,7 +290,6 @@ class ContestController extends Controller
         DB::transaction(function () use ($contest, $user) {
             $contestType = $contest->type?->name;
 
-            // TODO: optimize this code
             if ($contestType === 'Duel') {
                 $participant = $contest->participants()
                     ->where('user_id', $user->id)
@@ -230,7 +306,31 @@ class ContestController extends Controller
                     ->update(['opponent_id' => null]);
             }
 
+            if ($contestType === 'ICPC') {
+                $group = Group::where('contest_id', $contest->id)
+                    ->whereHas('members', function ($q) use ($user) {
+                        $q->where('users.id', $user->id);
+                    })
+                    ->first();
+
+                if ($group) {
+                    $group->members()->detach($user->id);
+
+                    if ($group->members()->count() === 0) {
+                        $group->delete();
+                    }
+                }
+            }
+
             $contest->participants()->detach($user->id);
+
+            if ($contest->standings) {
+                app(\App\Services\StandingService::class)->removeUserStanding(
+                    $contest->standings,
+                    $user->name,
+                    $contestType ?? 'Classic'
+                );
+            }
         });
 
         return response()->json(['message' => __('contest.unregistered')], 200);
@@ -239,24 +339,20 @@ class ContestController extends Controller
     public function submit(Contest $contest): array
     {
         return [
-            'problems' => $contest->problems->map->only(['char', 'name']),
+            'problems' => $contest->problems->map->only(['char', 'name', 'code']),
             'acceptable_languages' => $contest->acceptableLanguages(),
         ];
     }
 
-    public function getContestProblemSubmissions(Contest $contest, int $problemId, string $username): AnonymousResourceCollection
+    public function getContestProblemSubmissions(Contest $contest, Problem $problem, string $handle): AnonymousResourceCollection
     {
-        $targetUser = User::where('name', $username)->firstOrFail(['id']);
-
-        $problem = $contest->problems()
-            ->orderBy('id', 'asc')
-            ->offset($problemId - 1)
-            ->firstOrFail(['id']);
+        $targetUser = User::where('handle', $handle)->firstOrFail(['id']);
 
         $submissions = Submission::query()
             ->where('problem_id', $problem->id)
             ->where('user_id', $targetUser->id)
             ->whereBetween('created_at', [$contest->start_date, $contest->end_date])
+            ->with(['user', 'problem.contest'])
             ->get();
 
         return SubmissionListResource::collection($submissions);

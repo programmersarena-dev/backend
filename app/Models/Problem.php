@@ -113,10 +113,15 @@ class Problem extends Model
     {
         $languages = [];
         $dockerLanguages = config('languages.dockerLanguages', []);
+        $availableLanguages = app(\App\Services\JudgeService::class)->getAvailableLanguages();
+        $filterByAvailable = !empty($availableLanguages);
 
         foreach ($dockerLanguages as $language => $details) {
             foreach ($details['versions'] ?? [] as $version) {
-                $languages[] = "{$language}-{$version}";
+                $langKey = "{$language}-{$version}";
+                if (!$filterByAvailable || in_array($langKey, $availableLanguages)) {
+                    $languages[] = $langKey;
+                }
             }
         }
 
@@ -136,7 +141,7 @@ class Problem extends Model
             ? $this->contest
             : $this->contest()->first();
 
-        return $contest ? $contest->getStatus() === 'ended' : false;
+        return $contest ? $contest->status === 'Ended' : false;
     }
 
     /**

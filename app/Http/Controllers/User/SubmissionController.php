@@ -38,7 +38,7 @@ class SubmissionController extends Controller
                 return response()->json(['message' => __('messages.problem_not_found')], 404);
             }
             $submissions = Submission::where('problem_id', $problem->id)
-                ->with(['user', 'problem'])
+                ->with(['user', 'problem.contest'])
                 ->orderBy('id', 'desc')
                 ->paginate(100);
 
@@ -47,7 +47,7 @@ class SubmissionController extends Controller
 
         return SubmissionListResource::collection(
             Submission::query()
-                ->with(['user', 'problem'])
+                ->with(['user', 'problem.contest'])
                 ->orderBy('id', 'desc')
                 ->paginate(100)
         );

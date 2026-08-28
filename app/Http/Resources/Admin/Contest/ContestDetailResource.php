@@ -31,6 +31,8 @@ class ContestDetailResource extends JsonResource
             ? sprintf('%02d:%02d', floor($this->duration_minutes / 60), $this->duration_minutes % 60)
             : $this->duration;
 
+        $groups = $this->resolveGroups();
+
         return [
             'id' => $this->id,
             'type' => $this->type?->name,
@@ -40,10 +42,11 @@ class ContestDetailResource extends JsonResource
             'end_date' => $this->end_date?->toISOString(),
             'duration' => $formattedDuration,
             'participants' => $participants,
+            'groups' => $groups,
             'official' => (bool) $this->official,
             'attachments' => $this->hasAttachments(),
             'subtasks' => $this->hasSubtasks(),
-            'status' => $this->getStatus(),
+            'status' => $this->status,
             'acceptable_languages' => $this->acceptableLanguages(),
 
             // Conditional field using Laravel API Resource helpers
@@ -103,5 +106,24 @@ class ContestDetailResource extends JsonResource
                 $opponent?->name ?? 'Undefined',
             ];
         })->values();
+    }
+
+    protected function resolveGroups(): array
+    {
+        if ($this->type?->name !== 'ICPC') {
+            return [];
+        }
+
+        $groups = $this->relationLoaded('groups')
+            ? $this->groups
+            : $this->groups()->with('members')->get();
+
+        return $groups->map(function ($group) {
+            return [
+                'id' => $group->id,
+                'name' => $group->name,
+                'members' => $group->members->pluck('name')->sort()->values()->all(),
+            ];
+        })->values()->all();
     }
 }

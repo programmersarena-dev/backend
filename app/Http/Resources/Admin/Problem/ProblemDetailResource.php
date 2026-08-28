@@ -11,7 +11,7 @@ class ProblemDetailResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $contestStatus = $this->contest?->getStatus();
+        $contestStatus = $this->contest?->status;
 
         $tags = ($contestStatus === 'Ended' || !$this->contest_id)
             ? $this->whenLoaded('tags', fn() => $this->tags->pluck('name'))

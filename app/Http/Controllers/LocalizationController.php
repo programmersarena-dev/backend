@@ -7,6 +7,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Log;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class LocalizationController extends Controller
 {
@@ -21,7 +22,7 @@ class LocalizationController extends Controller
      * Update the application locale dynamically or validate client-side switches.
      *
      * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return \JsonResponse
      */
     public function setLocale(Request $request): JsonResponse
     {
@@ -32,7 +33,23 @@ class LocalizationController extends Controller
         $locale = $request->input('lang');
         App::setLocale($locale);
 
-        if ($user = $request->user('sanctum')) {
+        $user = $request->user('sanctum');
+
+        if (!$user) {
+            $authHeader = $request->header('Authorization');
+
+            if ($authHeader && str_starts_with($authHeader, 'Bearer ')) {
+                $token = substr($authHeader, 7);
+
+                $tokenModel = PersonalAccessToken::findToken($token);
+
+                if ($tokenModel && !$tokenModel->expires_at?->isPast()) {
+                    $user = $tokenModel->tokenable;
+                }
+            }
+        }
+
+        if ($user) {
             $user->update(['locale' => $locale]);
         }
 

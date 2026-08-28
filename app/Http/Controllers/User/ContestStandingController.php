@@ -21,7 +21,7 @@ class ContestStandingController extends Controller
      */
     public function show(Contest $contest, Request $request): JsonResponse|array
     {
-        if ($contest->getStatus() === 'notStarted') {
+        if ($contest->status === 'Pending') {
             return response()->json(['error' => 'Bäsleşik başlamady'], 403);
         }
 
@@ -41,7 +41,15 @@ class ContestStandingController extends Controller
         $showUnofficial = $request->boolean('unofficial', true);
 
         if ($showUnofficial && !empty($standings)) {
-            $usersHandle = array_column($standings, 'handle');
+            $usersHandle = [];
+
+            foreach ($standings as $standing) {
+                if (isset($standing['members']) && is_array($standing['members'])) {
+                    $usersHandle = array_merge($usersHandle, $standing['members']);
+                } elseif (isset($standing['handle'])) {
+                    $usersHandle[] = $standing['handle'];
+                }
+            }
 
             $users = User::whereIn('handle', $usersHandle)->get();
 
@@ -52,15 +60,42 @@ class ContestStandingController extends Controller
                 }
             }
 
-            $standings = array_values(array_filter($standings, function ($standing) use ($officialUsernames) {
-                $handle = is_array($standing) ? ($standing['handle'] ?? null) : ($standing->handle ?? null);
+            if ($contest->isICPC()) {
+                $standings = array_values(array_filter($standings, function ($standing) use ($officialUsernames) {
+                    $members = $standing['members'] ?? [];
+                    foreach ($members as $member) {
+                        if (isset($officialUsernames[$member])) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }));
+            } elseif ($contest->isDuel()) {
+                $standings = array_values(array_filter($standings, function ($standing) use ($officialUsernames) {
+                    $handle = $standing['handle'] ?? null;
+                    $handle2 = $standing['handle2'] ?? null;
 
-                if (is_array($handle)) {
-                    $handle = $handle[0] ?? null;
-                }
+                    if ($handle && isset($officialUsernames[$handle])) {
+                        return true;
+                    }
 
-                return $handle && isset($officialUsernames[$handle]);
-            }));
+                    if ($handle2 && isset($officialUsernames[$handle2])) {
+                        return true;
+                    }
+
+                    return false;
+                }));
+            } else {
+                $standings = array_values(array_filter($standings, function ($standing) use ($officialUsernames) {
+                    $handle = is_array($standing) ? ($standing['handle'] ?? null) : ($standing->handle ?? null);
+
+                    if (is_array($handle)) {
+                        $handle = $handle[0] ?? null;
+                    }
+
+                    return $handle && isset($officialUsernames[$handle]);
+                }));
+            }
         }
 
         if ($contest->hasSubtasks()) {
