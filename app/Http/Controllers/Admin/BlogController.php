@@ -3,21 +3,18 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-
-use App\Models\Blog;
-use App\Models\BlogTranslation;
-
 use App\Http\Requests\StoreBlogRequest;
 use App\Http\Requests\UpdateBlogRequest;
-
 use App\Http\Resources\Admin\BlogResource;
+use App\Models\Blog;
+use App\Models\BlogTranslation;
 
 class BlogController extends Controller
 {
     public function index()
     {
-        $blogs = Blog::orderByDesc('id')->paginate(10);
+        $blogs = Blog::with('translations')->orderByDesc('id')->paginate(10);
+
         return BlogResource::collection($blogs);
     }
 
@@ -49,12 +46,12 @@ class BlogController extends Controller
     public function edit(Blog $blog)
     {
         return [
-            "title" => $blog->title,
-            "description" => $blog->description,
-            "title_en" => $blog->getTranslation("title","en"),
-            "description_en" => $blog->getTranslation("description","en"),
-            "title_ru" => $blog->getTranslation("title","ru"),
-            "description_ru" => $blog->getTranslation("description","ru"),
+            'title' => $blog->title,
+            'description' => $blog->description,
+            'title_en' => $blog->getTranslation('title', 'en'),
+            'description_en' => $blog->getTranslation('description', 'en'),
+            'title_ru' => $blog->getTranslation('title', 'ru'),
+            'description_ru' => $blog->getTranslation('description', 'ru'),
         ];
     }
 
@@ -66,13 +63,13 @@ class BlogController extends Controller
             'description' => $data['description'],
         ]);
 
-        $blog_en = BlogTranslation::where('blog_id',$blog->id)->where('language','en')->firstOrFail();
+        $blog_en = BlogTranslation::where('blog_id', $blog->id)->where('language', 'en')->firstOrFail();
         $blog_en->update([
             'title' => $data['title_en'],
             'description' => $data['description_en'],
         ]);
 
-        $blog_ru = BlogTranslation::where('blog_id',$blog->id)->where('language','ru')->firstOrFail();
+        $blog_ru = BlogTranslation::where('blog_id', $blog->id)->where('language', 'ru')->firstOrFail();
         $blog_ru->update([
             'title' => $data['title_ru'],
             'description' => $data['description_ru'],
@@ -86,9 +83,9 @@ class BlogController extends Controller
 
     public function destroy(Blog $blog)
     {
-        $blog_en = BlogTranslation::where('blog_id',$blog->id)->where('language','en')->firstOrFail();
-        $blog_ru = BlogTranslation::where('blog_id',$blog->id)->where('language','ru')->firstOrFail();
-        
+        $blog_en = BlogTranslation::where('blog_id', $blog->id)->where('language', 'en')->firstOrFail();
+        $blog_ru = BlogTranslation::where('blog_id', $blog->id)->where('language', 'ru')->firstOrFail();
+
         $blog->delete();
         $blog_en->delete();
         $blog_ru->delete();

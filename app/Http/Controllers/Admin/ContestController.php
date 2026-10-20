@@ -3,23 +3,20 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use Carbon\Carbon;
-use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Facades\Notification;
-use App\Notifications\ContestNotification;
-use Illuminate\Http\Request;
-
-use App\Models\Contest;
-use App\Models\ContestType;
-use App\Models\ContestStanding;
-use App\Models\Group;
-use App\Models\User;
-
 use App\Http\Requests\StoreContestRequest;
 use App\Http\Requests\UpdateContestRequest;
-
 use App\Http\Resources\Admin\Contest\ContestDetailResource;
 use App\Http\Resources\Admin\Contest\ContestListResource;
+use App\Jobs\NotifyContestUsers;
+use App\Models\Contest;
+use App\Models\ContestStanding;
+use App\Models\ContestType;
+use App\Models\Group;
+use App\Models\User;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ContestController extends Controller
 {
@@ -28,24 +25,10 @@ class ContestController extends Controller
      */
     public function index(Request $request)
     {
-        $now = Carbon::now('UTC');
-
         $searchName = $request->query('searchName', '');
-        $contests = Contest::where(fn($q) => $q->where('name', 'like', '%' . $searchName . '%'))->orderBy('start_date', 'desc')->get();
-
-        $contests->each(function ($contest) use ($now) {
-            $contest->status = $contest->end_date < $now ? 'Ended' : ($now < $contest->start_date ? 'Pending' : 'Active');
-        });
-
-        $perPage = 20;
-        $page = request()->get('page', 1);
-        $paginatedContests = new LengthAwarePaginator(
-            $contests->forPage($page, $perPage),
-            $contests->count(),
-            $perPage,
-            $page,
-            ['path' => request()->url(), 'query' => request()->query()]
-        );
+        $paginatedContests = Contest::with(['type', 'authors', 'participants'])
+            ->where('name', 'like', '%'.$searchName.'%')->orderByDesc('start_date')
+            ->paginate(20)->withQueryString();
 
         return ContestListResource::collection($paginatedContests);
     }
@@ -65,32 +48,34 @@ class ContestController extends Controller
     {
         $data = $request->validated();
 
-        $users = User::all()->keyBy('name');
-        $type = ContestType::where('name', $data['type'])->firstOrFail();
+        return DB::transaction(function () use ($data) {
+            $users = $this->selectedUsers($data);
+            $type = ContestType::where('name', $data['type'])->firstOrFail();
 
-        [$hours, $minutes] = explode(':', $data['duration']);
-        $durationMinutes = ((int) $hours * 60) + (int) $minutes;
+            [$hours, $minutes] = explode(':', $data['duration']);
+            $durationMinutes = ((int) $hours * 60) + (int) $minutes;
 
-        $contest = Contest::create([
-            'type_id' => $type->id,
-            'name' => $data['name'],
-            'start_date' => Carbon::parse($data['start_date'])->setTimezone('UTC')->toIso8601String(),
-            'duration_minutes' => $durationMinutes,
-            'official' => $data['official'],
-            'active' => $data['active'],
-        ]);
+            $contest = Contest::create([
+                'type_id' => $type->id,
+                'name' => $data['name'],
+                'start_date' => Carbon::parse($data['start_date'])->setTimezone('UTC')->toIso8601String(),
+                'duration_minutes' => $durationMinutes,
+                'official' => $data['official'],
+                'active' => $data['active'],
+            ]);
 
-        $this->syncAuthors($contest, $data['authors'], $users);
-        $this->syncParticipants($contest, $data['participants'], $data['type'], $users);
+            $this->syncAuthors($contest, $data['authors'], $users);
+            $this->syncParticipants($contest, $data['participants'], $data['type'], $users);
 
-        ContestStanding::create([
-            'contest_id' => $contest->id,
-        ]);
+            ContestStanding::create([
+                'contest_id' => $contest->id,
+            ]);
 
-        return response()->json([
-            'message' => 'üstünlikli döredildi',
-            'contest' => new ContestDetailResource($contest),
-        ], 202);
+            return response()->json([
+                'message' => 'üstünlikli döredildi',
+                'contest' => new ContestDetailResource($contest),
+            ], 202);
+        });
     }
 
     /**
@@ -116,28 +101,30 @@ class ContestController extends Controller
     {
         $data = $request->validated();
 
-        $users = User::all()->keyBy('name');
-        $type = ContestType::where('name', $data['type'])->firstOrFail();
+        return DB::transaction(function () use ($data, $contest) {
+            $users = $this->selectedUsers($data);
+            $type = ContestType::where('name', $data['type'])->firstOrFail();
 
-        [$hours, $minutes] = explode(':', $data['duration']);
-        $durationMinutes = ((int) $hours * 60) + (int) $minutes;
+            [$hours, $minutes] = explode(':', $data['duration']);
+            $durationMinutes = ((int) $hours * 60) + (int) $minutes;
 
-        $contest->update([
-            'type_id' => $type->id,
-            'name' => $data['name'],
-            'start_date' => Carbon::parse($data['start_date'])->setTimezone('UTC')->toIso8601String(),
-            'duration_minutes' => $durationMinutes,
-            'official' => $data['official'],
-            'active' => $data['active'],
-        ]);
+            $contest->update([
+                'type_id' => $type->id,
+                'name' => $data['name'],
+                'start_date' => Carbon::parse($data['start_date'])->setTimezone('UTC')->toIso8601String(),
+                'duration_minutes' => $durationMinutes,
+                'official' => $data['official'],
+                'active' => $data['active'],
+            ]);
 
-        $this->syncAuthors($contest, $data['authors'], $users);
-        $this->syncParticipants($contest, $data['participants'], $data['type'], $users);
+            $this->syncAuthors($contest, $data['authors'], $users);
+            $this->syncParticipants($contest, $data['participants'], $data['type'], $users);
 
-        return response()->json([
-            'message' => 'Üstünlikli üýtgedildi',
-            'contest' => new ContestDetailResource($contest),
-        ], 202);
+            return response()->json([
+                'message' => 'Üstünlikli üýtgedildi',
+                'contest' => new ContestDetailResource($contest),
+            ], 202);
+        });
     }
 
     /**
@@ -159,7 +146,7 @@ class ContestController extends Controller
         $contest->delete();
 
         return response()->json([
-            'message' => 'Üstünlikli pozuldy'
+            'message' => 'Üstünlikli pozuldy',
         ], 202);
     }
 
@@ -168,18 +155,19 @@ class ContestController extends Controller
         if ($contest) {
             if ($contest->status != 'Pending') {
                 return response()->json([
-                    'message' => 'Bäsleşik eýýam başlady ýa gutardy'
+                    'message' => 'Bäsleşik eýýam başlady ýa gutardy',
                 ], 400);
             }
-            $users = User::all();
-            Notification::send($users, new ContestNotification($contest));
+            NotifyContestUsers::dispatch($contest->id)
+                ->onConnection(config('queue.notifications_connection'));
+
             return response()->json([
-                'message' => 'Ulanyjylara üstünlikli duýduryldy'
-            ], 200);
+                'message' => 'Notifications queued.',
+            ], 202);
         }
 
         return response()->json([
-            'message' => 'Bäsleşik tapylmady'
+            'message' => 'Bäsleşik tapylmady',
         ], 404);
     }
 
@@ -195,6 +183,19 @@ class ContestController extends Controller
             ->values();
 
         $contest->authors()->sync($authorIds);
+    }
+
+    private function selectedUsers(array $data)
+    {
+        $handles = collect($data['authors'] ?? [])->merge(
+            collect($data['participants'] ?? [])->flatten()
+        )->unique()->values();
+        $users = User::whereIn('handle', $handles)->get(['id', 'handle'])->keyBy('handle');
+        if ($users->count() !== $handles->count()) {
+            throw ValidationException::withMessages(['participants' => 'Select existing user handles.']);
+        }
+
+        return $users;
     }
 
     /**
@@ -236,6 +237,7 @@ class ContestController extends Controller
                         }
                     }
                 }
+
                 continue;
             }
 
@@ -281,16 +283,16 @@ class ContestController extends Controller
             $group = Group::updateOrCreate(
                 [
                     'contest_id' => $contest->id,
-                    'name' => 'Group ' . $groupIndex,
+                    'name' => 'Group '.$groupIndex,
                 ],
                 [
                     'contest_id' => $contest->id,
-                    'name' => 'Group ' . $groupIndex,
+                    'name' => 'Group '.$groupIndex,
                 ]
             );
 
             $group->members()->sync(
-                $users->filter(fn($u) => in_array($u->name, $chunk))->map(fn($u) => [
+                $users->filter(fn ($u) => in_array($u->name, $chunk))->map(fn ($u) => [
                     'contest_id' => $contest->id,
                 ])->toArray()
             );

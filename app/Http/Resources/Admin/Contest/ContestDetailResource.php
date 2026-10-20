@@ -20,8 +20,8 @@ class ContestDetailResource extends JsonResource
 
         // 1. Fetch author names cleanly via the loaded relation (or fallback)
         $authorNames = $this->relationLoaded('authors')
-            ? $this->authors->pluck('name')
-            : $this->authors()->pluck('name');
+            ? $this->authors->pluck('handle')
+            : $this->authors()->pluck('handle');
 
         // 2. Resolve participants via Eloquent relation instead of parsing JSON strings
         $participants = $this->resolveParticipants();
@@ -71,14 +71,14 @@ class ContestDetailResource extends JsonResource
         // Standard formats (Classic, IOI, ICPC)
         if (in_array($typeName, ['Classic', 'IOI', 'ICPC'])) {
             return [
-                'official' => $participants->where('pivot.is_official', true)->pluck('name')->values(),
-                'unofficial' => $participants->where('pivot.is_official', false)->pluck('name')->values(),
+                'official' => $participants->where('pivot.is_official', true)->pluck('handle')->values(),
+                'unofficial' => $participants->where('pivot.is_official', false)->pluck('handle')->values(),
             ];
         }
 
         // Duel format (Pairings)
         if ($typeName === 'Duel') {
-            $grouped = $participants->groupBy(fn($p) => $p->pivot->is_official ? 'official' : 'unofficial');
+            $grouped = $participants->groupBy(fn ($p) => $p->pivot->is_official ? 'official' : 'unofficial');
 
             return [
                 'official' => $this->formatDuelPairs($grouped->get('official', collect())),
@@ -102,10 +102,10 @@ class ContestDetailResource extends JsonResource
             $opponent = $participantCollection->firstWhere('id', $opponentId);
 
             return [
-                $player->name ?? 'Undefined',
-                $opponent?->name ?? 'Undefined',
+                $player->handle,
+                $opponent?->handle,
             ];
-        })->values();
+        })->unique(fn ($pair) => collect($pair)->sort()->implode(':'))->values();
     }
 
     protected function resolveGroups(): array

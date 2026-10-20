@@ -3,20 +3,16 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Storage;
-
-use App\Models\Contest;
-use App\Models\Profile;
-use App\Models\User;
-use App\Models\ContestStanding;
-
-use App\Http\Requests\StoreProfileRequest;
 use App\Http\Requests\UpdateProfileRequest;
-
 use App\Http\Resources\User\Submission\SubmissionListResource;
 use App\Http\Resources\User\UserResource;
+use App\Models\Submission;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 
 class UserController extends Controller
 {
@@ -25,10 +21,14 @@ class UserController extends Controller
      */
     public function show($handle)
     {
-        $user = User::query()->where('handle', $handle)->first();
-        if (!$user) {
+        $user = User::query()->with('profile.country')
+            ->withCount(['submissions as accepted_problems_count' => fn ($query) => $query
+                ->accepted()->select(DB::raw('count(distinct problem_id)'))])
+            ->where('handle', $handle)->first();
+        if (! $user) {
             return response('', 404);
         }
+
         return new UserResource($user);
     }
 
@@ -42,7 +42,8 @@ class UserController extends Controller
         }
         $user = $request->user();
         $profile = $user->profile->only(['first_name', 'last_name', 'country_id']);
-        $profile['current_image'] = $user->profile->image ? asset('storage/' . $user->profile->image) : '';
+        $profile['current_image'] = $user->profile->image ? asset('storage/'.$user->profile->image) : '';
+
         return response()->json($profile);
     }
 
@@ -51,7 +52,7 @@ class UserController extends Controller
      */
     public function update(UpdateProfileRequest $request)
     {
-        if (!$request->user()) {
+        if (! $request->user()) {
             return response('', 404);
         }
 
@@ -88,43 +89,29 @@ class UserController extends Controller
     public function ratings($handle)
     {
         $user = User::where('handle', $handle)->firstOrFail();
-        $contest_ratings = [];
-        $new_rating = 0;
-        if ($user->rating) {
-            foreach (json_decode($user->rating->contest_ratings) as $index => $contest_rating) {
-                $contest = Contest::findOrFail($contest_rating->contest_id);
-                $standing = ContestStanding::findOrFail($contest->id);
-                $userContestResult = $standing->userContestResult($user->name);
-                $rating = $contest_rating->rating;
-                $new_rating += $rating;
-
-                $contest_ratings[] = [
-                    'id' => $index + 1,
-                    'contest' => [
-                        'id' => $contest->id,
-                        'name' => $contest->name,
-                    ],
-                    'rank' => $userContestResult->place,
-                    'solved' => count(array_filter($userContestResult->problems, fn($problem) => $problem->score > 0)),
-                    'rating' => $rating,
-                    'new_rating' => $new_rating,
-                ];
-            }
-
-            usort($contest_ratings, function ($a, $b) {
-                return $b['id'] <=> $a['id'];
-            });
-        }
+        $contestRatings = $user->contestRatings()->with('contest:id,name')
+            ->orderByDesc('id')->get()->map(fn ($rating) => [
+                'id' => $rating->id,
+                'contest' => ['id' => $rating->contest_id, 'name' => $rating->contest?->name],
+                'rank' => $rating->rank,
+                'solved' => $rating->solved,
+                'rating' => $rating->rating_change,
+                'new_rating' => $rating->new_rating,
+            ]);
 
         return [
-            'current_rating' => $user->rating ? $user->rating->current_rating : 0,
-            'contest_ratings' => $contest_ratings,
+            'current_rating' => (int) $user->current_rating,
+            'contest_ratings' => $contestRatings,
         ];
     }
 
-    public function submissions($handle)
+    public function submissions(Request $request, $handle)
     {
         $submissions = User::query()->where('handle', $handle)->firstOrFail()->submissions();
-        return SubmissionListResource::collection($submissions->orderBy('id', 'desc')->paginate(100));
+
+        return SubmissionListResource::collection($submissions
+            ->visibleTo(Auth::guard('sanctum')->user())
+            ->with(['user:id,handle', 'problem.translations', 'problem.contest.problems:id,contest_id'])
+            ->orderByDesc('id')->paginate(Submission::perPage($request))->withQueryString());
     }
 }

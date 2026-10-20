@@ -32,11 +32,12 @@ class SubmissionListResource extends JsonResource
             'problem' => [
                 'contest_id' => $problem?->contest_id,
                 'char' => $problem?->char,
-                'name' => $problem?->getTranslation("name"),
+                'name' => $problem?->getTranslation('name'),
             ],
 
             'language' => $this->language,
             'status' => $this->status,
+            'can_poll' => (bool) ($user && $canViewDetails && $contest?->status !== 'Pending'),
 
             'time' => ($this->time ?? 0),
             'memory' => ($this->memory ?? 0),

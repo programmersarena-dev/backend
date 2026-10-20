@@ -2,18 +2,20 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\SanitizesRichText;
+use App\Services\JudgeService;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Support\Facades\Auth;
 
 class Problem extends Model
 {
     use HasFactory;
+    use SanitizesRichText;
     use SoftDeletes;
 
     protected $fillable = [
@@ -48,7 +50,7 @@ class Problem extends Model
     ];
 
     /* -------------------------------------------------------------------------- */
-    /* RELATIONSHIPS                                                              */
+    /* RELATIONSHIPS */
     /* -------------------------------------------------------------------------- */
 
     public function contest(): BelongsTo
@@ -67,7 +69,7 @@ class Problem extends Model
     }
 
     /* -------------------------------------------------------------------------- */
-    /* HELPER & OPTIMIZED METHODS                                                 */
+    /* HELPER & OPTIMIZED METHODS */
     /* -------------------------------------------------------------------------- */
 
     /**
@@ -93,8 +95,14 @@ class Problem extends Model
     {
         return Attribute::make(
             get: function () {
-                if (!$this->contest_id) {
+                if (! $this->contest_id) {
                     return null;
+                }
+
+                if ($this->relationLoaded('contest') && $this->contest?->relationLoaded('problems')) {
+                    $index = $this->contest->problems->where('id', '<', $this->id)->count();
+
+                    return chr(ord('A') + $index);
                 }
 
                 $index = static::where('contest_id', $this->contest_id)
@@ -113,13 +121,13 @@ class Problem extends Model
     {
         $languages = [];
         $dockerLanguages = config('languages.dockerLanguages', []);
-        $availableLanguages = app(\App\Services\JudgeService::class)->getAvailableLanguages();
-        $filterByAvailable = !empty($availableLanguages);
+        $availableLanguages = app(JudgeService::class)->getAvailableLanguages();
+        $filterByAvailable = ! empty($availableLanguages);
 
         foreach ($dockerLanguages as $language => $details) {
             foreach ($details['versions'] ?? [] as $version) {
                 $langKey = "{$language}-{$version}";
-                if (!$filterByAvailable || in_array($langKey, $availableLanguages)) {
+                if (! $filterByAvailable || in_array($langKey, $availableLanguages)) {
                     $languages[] = $langKey;
                 }
             }
@@ -133,7 +141,7 @@ class Problem extends Model
      */
     public function isContestEnded(): bool
     {
-        if (!$this->contest_id) {
+        if (! $this->contest_id) {
             return true; // Non-contest / public archive problems
         }
 
@@ -154,7 +162,7 @@ class Problem extends Model
             get: function (): bool {
                 $user = Auth::guard('sanctum')->user();
 
-                if (!$user) {
+                if (! $user) {
                     return false;
                 }
 
@@ -174,7 +182,7 @@ class Problem extends Model
     }
 
     /* -------------------------------------------------------------------------- */
-    /* ACCESSORS                                                                  */
+    /* ACCESSORS */
     /* -------------------------------------------------------------------------- */
 
     /**

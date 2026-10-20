@@ -14,6 +14,8 @@ return [
     */
 
     'default' => env('QUEUE_CONNECTION', 'sync'),
+    'notifications_connection' => env('QUEUE_NOTIFICATIONS_CONNECTION',
+        env('QUEUE_CONNECTION', 'redis') === 'sync' ? 'database' : env('QUEUE_CONNECTION', 'redis')),
 
     /*
     |--------------------------------------------------------------------------

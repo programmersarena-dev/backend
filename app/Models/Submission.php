@@ -6,55 +6,78 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Http\Request;
 
 class Submission extends Model
 {
     use HasFactory;
 
     /* -------------------------------------------------------------------------- */
-    /* SUBMISSION STATUS CONSTANTS                                                */
+    /* SUBMISSION STATUS CONSTANTS */
     /* -------------------------------------------------------------------------- */
 
     // Pending & Processing Statuses
     public const STATUS_PENDING = 'Pending';
+
+    public const STATUS_QUEUED = 'Queued';
+
     public const STATUS_IN_QUEUE = 'In Queue';
+
     public const STATUS_COMPILING = 'Compiling';
+
     public const STATUS_RUNNING = 'Running';
+
     public const STATUS_JUDGING = 'Judging';
 
     // Successful / Accepted Statuses
     public const STATUS_ACCEPTED = 'Accepted';
+
     public const STATUS_AC = 'AC';
+
     public const STATUS_100 = '100';
 
     // Wrong Answer / Partial
     public const STATUS_WRONG_ANSWER = 'Wrong Answer';
+
     public const STATUS_WA = 'WA';
+
     public const STATUS_PARTIAL_ACCEPT = 'Partial Accept';
 
     // Resource Limit Errors
     public const STATUS_TIME_LIMIT_EXCEEDED = 'Time Limit Exceeded';
+
     public const STATUS_TLE = 'TLE';
+
     public const STATUS_MEMORY_LIMIT_EXCEEDED = 'Memory Limit Exceeded';
+
     public const STATUS_MLE = 'MLE';
+
     public const STATUS_OUTPUT_LIMIT_EXCEEDED = 'Output Limit Exceeded';
+
     public const STATUS_OLE = 'OLE';
 
     // Compilation & Execution Errors
     public const STATUS_COMPILATION_ERROR = 'Compilation Error';
+
     public const STATUS_CE = 'CE';
+
     public const STATUS_RUNTIME_ERROR = 'Runtime Error';
+
     public const STATUS_RE = 'RE';
 
     // System / Judge Internal Errors
     public const STATUS_SYSTEM_ERROR = 'System Error';
+
     public const STATUS_JUDGE_ERROR = 'Judge Error';
+
     public const STATUS_RESTRICTED_FUNC = 'Restricted Function';
+
     public const STATUS_PRESENTATION_ERROR = 'Presentation Error';
+
     public const STATUS_PE = 'PE';
 
     /* -------------------------------------------------------------------------- */
-    /* CATEGORIZED STATUS ARRAYS                                                 */
+    /* CATEGORIZED STATUS ARRAYS */
     /* -------------------------------------------------------------------------- */
 
     /**
@@ -70,6 +93,7 @@ class Submission extends Model
      * Pending or active judging statuses.
      */
     public const PENDING_STATUSES = [
+        self::STATUS_QUEUED,
         self::STATUS_PENDING,
         self::STATUS_IN_QUEUE,
         self::STATUS_COMPILING,
@@ -124,7 +148,7 @@ class Submission extends Model
     ];
 
     /* -------------------------------------------------------------------------- */
-    /* RELATIONSHIPS                                                              */
+    /* RELATIONSHIPS */
     /* -------------------------------------------------------------------------- */
 
     public function user(): BelongsTo
@@ -143,7 +167,7 @@ class Submission extends Model
     }
 
     /* -------------------------------------------------------------------------- */
-    /* HELPER METHODS & ACCESSORS                                                 */
+    /* HELPER METHODS & ACCESSORS */
     /* -------------------------------------------------------------------------- */
 
     /**
@@ -179,7 +203,7 @@ class Submission extends Model
     {
         $outputs = $this->outputs;
 
-        if (empty($outputs) || !is_array($outputs)) {
+        if (empty($outputs) || ! is_array($outputs)) {
             return [
                 'test' => null,
                 'subtask' => null,
@@ -213,7 +237,7 @@ class Submission extends Model
     }
 
     /* -------------------------------------------------------------------------- */
-    /* QUERY SCOPES                                                               */
+    /* QUERY SCOPES */
     /* -------------------------------------------------------------------------- */
 
     /**
@@ -229,10 +253,21 @@ class Submission extends Model
      */
     public function scopePending(Builder $query): Builder
     {
-        return $query->whereIn('status', self::PENDING_STATUSES)
+        return $query->where(fn ($pending) => $pending->whereIn('status', self::PENDING_STATUSES)
             ->orWhere('status', 'LIKE', 'Compiling%')
             ->orWhere('status', 'LIKE', 'Running%')
-            ->orWhere('status', 'LIKE', 'Judging%');
+            ->orWhere('status', 'LIKE', 'Judging%'));
+    }
+
+    public static function perPage(Request $request): int
+    {
+        return max(1, min(50, $request->integer('per_page', 25)));
+    }
+
+    public function scopeVisibleTo(Builder $query, ?User $user): Builder
+    {
+        return $user?->user_type === 'admin' ? $query : $query
+            ->whereHas('problem.contest', fn ($contest) => $contest->where('start_date', '<=', now()));
     }
 
     /**

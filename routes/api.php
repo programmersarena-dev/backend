@@ -22,6 +22,7 @@ use App\Http\Controllers\User\TeamController;
 use App\Http\Controllers\User\UserController;
 use App\Models\ContestType;
 use App\Models\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -123,6 +124,7 @@ Route::prefix('problems')->group(function () {
 Route::prefix('submissions')->group(function () {
 
     Route::get('/', [SubmissionController::class, 'index']);
+    Route::get('/statuses', [SubmissionController::class, 'statuses'])->middleware('auth:sanctum');
     Route::get('/submission/{submission}', [SubmissionController::class, 'show'])->middleware(['auth:sanctum', 'can:view,submission']);
     Route::get('/submission/{submission}/status', [SubmissionController::class, 'status'])->middleware(['auth:sanctum', 'can:view,submission']);
     Route::post('/problem/{code}/submit', [SubmissionController::class, 'store'])->middleware(['auth:sanctum', 'verified']);
@@ -155,8 +157,17 @@ Route::group(['prefix' => '/admin', 'middleware' => 'admin'], function () {
         Route::post('/upload', [AdminImageController::class, 'store']);
         Route::delete('/delete', [AdminImageController::class, 'destroy']);
     });
-    Route::get('/users', function () {
-        $users = User::orderBy('name', 'asc')->get();
+    Route::get('/users', function (Request $request) {
+        $request->validate(['q' => ['nullable', 'string', 'max:64']]);
+        $search = mb_strtolower(trim($request->query('q', '')));
+        if ($search === '') {
+            return response()->json([]);
+        }
+        $prefix = addcslashes($search, '%_\\').'%';
+        $users = User::select('id', 'handle', 'name')
+            ->where(fn ($query) => $query->whereRaw('LOWER(handle) LIKE ?', [$prefix])
+                ->orWhereRaw('LOWER(name) LIKE ?', [$prefix]))
+            ->orderBy('handle')->limit(20)->get();
 
         return response()->json($users);
     });

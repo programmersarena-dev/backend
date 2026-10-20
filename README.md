@@ -2,6 +2,8 @@
 
 Backend API for ProgrammersArena, an online contest platform supporting input/output problems and ICPC-like contests. Built with Laravel, PostgreSQL, and Redis.
 
+For the submission, profile, and judge optimizations, see the [rollout and verification notes](docs/optimization-rollout.md).
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)

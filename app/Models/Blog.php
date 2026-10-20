@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\SanitizesRichText;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Blog extends Model
 {
     use HasFactory;
+    use SanitizesRichText;
 
     protected $fillable = [
         'id',
@@ -19,6 +21,7 @@ class Blog extends Model
     {
         $language = $language == false ? app()->getLocale() : $language;
         $translations = $this->translations->where('language', $language)->first();
+
         return $translations != null ? $translations->$field : $this->$field;
     }
 

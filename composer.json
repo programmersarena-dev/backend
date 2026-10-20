@@ -12,7 +12,8 @@
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.9",
         "nesbot/carbon": "^3.8",
-        "predis/predis": "^2.0|^3.5"
+        "predis/predis": "^2.0|^3.5",
+        "symfony/html-sanitizer": "^7.4.12"
     },
     "require-dev": {
         "laravel/pint": "^1.13",

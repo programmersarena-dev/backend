@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\Problem;
 use App\Models\Submission;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreSubmissionRequest extends FormRequest
@@ -15,7 +16,7 @@ class StoreSubmissionRequest extends FormRequest
      */
     public function problem(): Problem
     {
-        if (!$this->problem) {
+        if (! $this->problem) {
             $this->problem = Problem::where('code', $this->route('code'))->firstOrFail();
         }
 
@@ -37,14 +38,14 @@ class StoreSubmissionRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
         return [
             'language' => ['required', 'string'],
-            'code'     => ['required_without:file', 'nullable', 'string', 'max:512000'],
-            'file'     => ['required_without:code', 'nullable', 'file', 'max:512000'],
+            'code' => ['required_without:file', 'nullable', 'string', 'max:512000'],
+            'file' => ['required_without:code', 'nullable', 'file', 'max:500'],
         ];
     }
 

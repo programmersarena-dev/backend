@@ -3,13 +3,11 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\DB;
-
+use App\Http\Resources\User\Contest\ContestRatingResource;
 use App\Models\Contest;
 use App\Models\ContestRating;
 use App\Models\User;
-
-use App\Http\Resources\User\Contest\ContestRatingResource;
+use Illuminate\Support\Facades\DB;
 
 class ContestRatingController extends Controller
 {
@@ -41,7 +39,7 @@ class ContestRatingController extends Controller
 
                 $user = $users->get($handle);
 
-                if (!$user) {
+                if (! $user) {
                     continue;
                 }
 
@@ -51,8 +49,8 @@ class ContestRatingController extends Controller
                 ContestRating::updateOrCreate(
                     ['user_id' => $user->id, 'contest_id' => $contest->id],
                     [
-                        'rank'       => $index + 1,
-                        'solved'     => $solved,
+                        'rank' => $index + 1,
+                        'solved' => $solved,
                         'old_rating' => $oldRating,
                         'new_rating' => $newRating,
                     ]
@@ -60,7 +58,7 @@ class ContestRatingController extends Controller
 
                 $user->update([
                     'current_rating' => $newRating,
-                    'max_rating'     => max($user->max_rating, $newRating),
+                    'max_rating' => max($user->max_rating, $newRating),
                 ]);
             }
         });
@@ -71,33 +69,41 @@ class ContestRatingController extends Controller
             ->get();
     }
 
-function calculateContestRatings($participants, $users, $kFactor = 32)
-{
-    $newRatings = [];
-
-    foreach ($participants as $index_i => $participant) {
-        $handle_i = is_array($participant) ? $participant['handle'] : $participant->handle;
-        $currentRating = $users[$handle_i]->current_rating ?? 0;
-        $place = $index_i;
-        $totalExpectedPerformance = 0;
-
-        foreach ($participants as $index_j => $opponent) {
-            if ($index_i != $index_j) {
-                $handle_j = is_array($opponent) ? $opponent['handle'] : $opponent->handle;
-                $opponentRating = $users[$handle_j]->current_rating ?? 0;
-                $totalExpectedPerformance += $this->expectedPerformance($currentRating, $opponentRating);
+    public function calculateContestRatings($participants, $users, $kFactor = 32)
+    {
+        $newRatings = [];
+        if (count($participants) < 2) {
+            foreach ($participants as $index => $participant) {
+                $handle = is_array($participant) ? $participant['handle'] : $participant->handle;
+                $newRatings[$index] = (int) ($users[$handle]->current_rating ?? 0);
             }
+
+            return $newRatings;
         }
 
-        $actualPerformance = (count($participants) - $place - 1) / (count($participants) - 1);
-        $expectedPerformance = $totalExpectedPerformance / (count($participants) - 1);
-        $newRating = $this->calculateNewRating($currentRating, $expectedPerformance, $actualPerformance, $kFactor);
+        foreach ($participants as $index_i => $participant) {
+            $handle_i = is_array($participant) ? $participant['handle'] : $participant->handle;
+            $currentRating = $users[$handle_i]->current_rating ?? 0;
+            $place = $index_i;
+            $totalExpectedPerformance = 0;
 
-        $newRatings[$index_i] = intval($newRating);
+            foreach ($participants as $index_j => $opponent) {
+                if ($index_i != $index_j) {
+                    $handle_j = is_array($opponent) ? $opponent['handle'] : $opponent->handle;
+                    $opponentRating = $users[$handle_j]->current_rating ?? 0;
+                    $totalExpectedPerformance += $this->expectedPerformance($currentRating, $opponentRating);
+                }
+            }
+
+            $actualPerformance = (count($participants) - $place - 1) / (count($participants) - 1);
+            $expectedPerformance = $totalExpectedPerformance / (count($participants) - 1);
+            $newRating = $this->calculateNewRating($currentRating, $expectedPerformance, $actualPerformance, $kFactor);
+
+            $newRatings[$index_i] = intval($newRating);
+        }
+
+        return $newRatings;
     }
-
-    return $newRatings;
-}
 
     private function calculateNewRating($currentRating, $expectedPerformance, $actualPerformance, $kFactor = 32)
     {

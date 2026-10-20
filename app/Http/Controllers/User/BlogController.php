@@ -10,6 +10,6 @@ class BlogController extends Controller
 {
     public function index()
     {
-        return BlogResource::collection(Blog::paginate(10));
+        return BlogResource::collection(Blog::with('translations')->latest('id')->paginate(10));
     }
 }

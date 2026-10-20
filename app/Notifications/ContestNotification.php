@@ -7,7 +7,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class ContestNotification extends Notification
+class ContestNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
@@ -37,12 +37,12 @@ class ContestNotification extends Notification
     public function toMail(object $notifiable): MailMessage
     {
         return (new MailMessage)
-            ->subject('Golaýlaýan bäsleşik: ' . $this->contest->name)
+            ->subject('Golaýlaýan bäsleşik: '.$this->contest->name)
             ->line('Bäsleşik ýakynda başlaýar!')
-            ->line('Bäsleşigiň ady: ' . $this->contest->name)
-            ->line('Başlaýan wagty: ' . $this->contest->start_date . ' UTC')
-            ->line('Tamamlanýan wagty: ' . $this->contest->end_date . ' UTC')
-            ->action('Bäsleşigi gör', url(env('REACT_APP_URL') . '/contest/' . $this->contest->id))
+            ->line('Bäsleşigiň ady: '.$this->contest->name)
+            ->line('Başlaýan wagty: '.$this->contest->start_date.' UTC')
+            ->line('Tamamlanýan wagty: '.$this->contest->end_date.' UTC')
+            ->action('Bäsleşigi gör', url(env('REACT_APP_URL').'/contest/'.$this->contest->id))
             ->line('Gatnaşýanyňyz üçin sag boluň!');
     }
 
