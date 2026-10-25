@@ -25,7 +25,7 @@ class StoreProblemRequest extends FormRequest
             'name' => 'required|string|max:255',
             'tags' => 'nullable|string',
             'time_limit' => 'required|integer|min:1',
-            'memory_limit' => 'required|integer|min:256',
+            'memory_limit' => 'required|integer|min:64',
             'score' => 'required|integer|min:500',
             'test_cases' => 'required|file|mimes:zip',
             'note' => 'nullable|string',

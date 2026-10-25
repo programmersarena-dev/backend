@@ -10,6 +10,7 @@ RUN apk add --no-cache \
         libpng-dev \
         jpeg-dev \
         freetype-dev \
+        icu-dev \
         libzip-dev \
         postgresql-dev \
         docker-cli \
@@ -18,7 +19,7 @@ RUN apk add --no-cache \
     && ln -sf /usr/bin/docker /usr/local/bin/docker
 
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j"$(nproc)" gd pdo_pgsql zip opcache \
+    && docker-php-ext-install -j"$(nproc)" gd intl pdo_pgsql zip opcache \
     && docker-php-ext-enable opcache
 
 ENV COMPOSER_ALLOW_SUPERUSER=1 \
@@ -49,6 +50,7 @@ RUN rm -rf /usr/local/etc/php-fpm.d/*.conf \
         echo '[www]'; \
         echo 'user = www-data'; \
         echo 'group = www-data'; \
+        echo 'clear_env = no'; \
         echo 'listen = /tmp/run/php/php-fpm.sock'; \
         echo 'listen.owner = www-data'; \
         echo 'listen.group = www-data'; \

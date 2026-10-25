@@ -1,10 +1,14 @@
 x-app-common: &app-common
+    image: programmers-arena-backend:latest
     build:
         context: .
         dockerfile: Dockerfile
     env_file:
         - .env
     environment: &app-env
+        APP_ENV: production
+        APP_DEBUG: "false"
+        DB_CONNECTION: pgsql
         DB_HOST: db
         DB_PORT: "5432"
         REDIS_HOST: redis
@@ -13,8 +17,6 @@ x-app-common: &app-common
     entrypoint:
         - /usr/local/bin/docker-entrypoint.sh
     volumes:
-        - ./:/var/www/html
-        - vendor:/var/www/html/vendor
         - storage:/var/www/html/storage
         - bootstrap_cache:/var/www/html/bootstrap/cache
         - /var/run/docker.sock:/var/run/docker.sock
@@ -69,25 +71,27 @@ services:
         <<: *app-common
         container_name: laravel-app
         ports:
-            - "8000:80"
+            - "0.0.0.0:8000:80"
         tmpfs:
             - /tmp:size=128M
         command: >
             sh -c "php artisan migrate --force &&
-                   php artisan db:seed --class=CountrySeeder --force &&
                    php-fpm --fpm-config /usr/local/etc/php-fpm.conf --daemonize &&
                    nginx -g 'daemon off;'"
 
-    judge-listener:
-        build: .
-        command: php artisan judge:listen-results
-        restart: unless-stopped
+    judge-consumer:
+        <<: *app-common
+        container_name: judge-result-consumer
         depends_on:
-            - redis
-        environment:
-            - REDIS_PREFIX=programmersarena_database_
-        networks:
-            - backend-network
+            db:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+            laravel:
+                condition: service_started
+        tmpfs:
+            - /tmp:size=64M
+        command: ["php", "artisan", "judge:listen-results"]
 
     queue-worker:
         <<: *app-common
@@ -103,25 +107,6 @@ services:
             - /tmp:size=64M
         command: sh -c "php artisan queue:work redis --sleep=3 --tries=3 --max-time=3600"
 
-    judge-consumer:
-        <<: *app-common
-        container_name: judge-result-consumer
-        depends_on:
-            db:
-                condition: service_healthy
-            redis:
-                condition: service_healthy
-            laravel:
-                condition: service_started
-        volumes:
-            - ./:/var/www/html
-            - vendor:/var/www/html/vendor
-            - storage:/var/www/html/storage
-            - bootstrap_cache:/var/www/html/bootstrap/cache
-        tmpfs:
-            - /tmp:size=64M
-        command: sh -c "php artisan judge:worker"
-
 networks:
     app-network:
         driver: bridge
@@ -129,6 +114,5 @@ networks:
 volumes:
     pgdata:
     redis_data:
-    vendor:
     storage:
     bootstrap_cache:

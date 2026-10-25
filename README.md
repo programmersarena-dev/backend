@@ -98,13 +98,13 @@ Starts the full stack — Laravel API, queue workers, judge consumer, PostgreSQL
 
 ```bash
 # Build and start all services
-docker-compose up --build -d
+docker compose up -d --build
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Stop all services
-docker-compose down
+docker compose down
 ```
 
 Services started automatically:

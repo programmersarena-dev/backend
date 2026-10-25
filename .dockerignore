@@ -2,8 +2,8 @@
 /vendor
 
 # Ignore environment files
-# .env
-# .env.*
+.env
+.env.*
 
 # Ignore IDE/editor files
 /.idea
