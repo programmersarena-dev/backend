@@ -33,6 +33,7 @@ class AuthController extends Controller
                 'name' => trim($data['first_name'] . ' ' . $data['last_name']),
                 'email' => $data['email'],
                 'password' => Hash::make($data['password']),
+                'email_verified_at' => now(),
             ]);
 
             Profile::create([
@@ -42,7 +43,7 @@ class AuthController extends Controller
                 'country_id' => $data['country_id'],
             ]);
 
-            $user->sendEmailVerificationNotification();
+            // $user->sendEmailVerificationNotification();
 
             return $user;
         });
